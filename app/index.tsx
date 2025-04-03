@@ -7,15 +7,19 @@ import {
   Image,
   StyleSheet
 } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const router = useRouter();
 
   const handleSignIn = () => {
     // TODO: 在這裡加入登入邏輯，例如呼叫後端 API 進行驗證
     console.log('Email:', email);
     console.log('Password:', password);
+
+    router.push('./home'); // 嘗試使用相對路徑
   };
 
   const handleForgotPassword = () => {
