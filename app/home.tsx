@@ -31,17 +31,27 @@ type RouteType =
   | "/medical-record"
   | "/health-info";
 
-const MenuButton = ({ icon, label, route }: { icon: keyof typeof FontAwesome.glyphMap; label: string; route: RouteType }) => {
-  const router = useRouter();
+  const MenuButton = ({ icon, label }: { icon: keyof typeof FontAwesome.glyphMap; label: string ; route: RouteType }) => {
+    const router = useRouter();
   
-  return (
-    <TouchableOpacity style={styles.button} onPress={() => router.push('./login')}>
-      <FontAwesome name={icon} size={24} color="black" />
-      <Text style={styles.buttonText}>{label}</Text>
-    </TouchableOpacity>
-  );
-};
-
+    const handlePress = () => {
+      if (label === "掛號") router.push("/register");
+      else if (label === "掛號查詢") router.push("./register-search");
+      else if (label === "檢查偵測") router.push("./health-check");
+      else if (label === "醫患對話") router.push("./chat");
+      else if (label === "病例") router.push("./medical-record");
+      else if (label === "健康資訊") router.push("./health-info");
+    };
+  
+    return (
+      <TouchableOpacity style={styles.button} onPress={handlePress}>
+        <FontAwesome name={icon} size={24} color="black" />
+        <Text style={styles.buttonText}>{label}</Text>
+      </TouchableOpacity>
+    );
+  };
+  
+  
 const styles = StyleSheet.create({
   container: {
     flex: 1,
