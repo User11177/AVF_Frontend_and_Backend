@@ -30,6 +30,7 @@ export default function LoginScreen() {
   const handleSignUp = () => {
     // TODO: 註冊的流程，例如跳轉到註冊頁面
     console.log('註冊');
+    router.push('/register');
   };
 
   return (
