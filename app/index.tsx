@@ -5,37 +5,78 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  StyleSheet
+  StyleSheet,
+  Alert,
+  Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const router = useRouter();
 
-  const handleSignIn = () => {
-    // TODO: 在這裡加入登入邏輯，例如呼叫後端 API 進行驗證
-    console.log('Email:', email);
-    console.log('Password:', password);
+  const BASE_URL =
+    Platform.OS === 'android'
+      ? 'http://10.0.2.2:8000'
+      : 'http://localhost:8000';
 
-    router.push('./home'); // 嘗試使用相對路徑
+  const handleSignIn = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }) // ✅ 傳 username
+      });
+
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+
+      if (!res.ok) {
+        const msg = json?.detail || text;
+        return Alert.alert('登入失敗', msg);
+      }
+
+      if (json && json.role) {
+        console.log('登入成功，用戶 ID:', json.user_id, '角色:', json.role);
+        switch (json.role) {
+          case 'doctor':
+            router.push('/doctor');
+            break;
+          case 'patient':
+            router.push('/patient');
+            break;
+          case 'admin':
+            router.push('/bot');
+            break;
+          default:
+            Alert.alert('錯誤', '無效的用戶角色');
+        }
+      } else {
+        console.warn('登入成功，但回傳格式異常');
+        Alert.alert('登入成功，但回傳格式異常');
+      }
+    } catch (err) {
+      console.error('登入錯誤', err);
+      Alert.alert('錯誤', '無法連線到伺服器');
+    }
   };
 
   const handleForgotPassword = () => {
-    // TODO: 忘記密碼的流程，例如跳轉到忘記密碼頁面或彈出視窗
-    console.log('忘記密碼');
+    router.push('/forgot-password');
   };
 
   const handleSignUp = () => {
-    // TODO: 註冊的流程，例如跳轉到註冊頁面
-    console.log('註冊');
     router.push('/register');
   };
 
   return (
     <View style={styles.container}>
-      {/* LOGO 區塊 */}
       <View style={styles.logoContainer}>
         <Image
           source={{ uri: 'https://via.placeholder.com/100?text=LOGO' }}
@@ -43,25 +84,21 @@ export default function LoginScreen() {
         />
       </View>
 
-      {/* 標題或其他文字 */}
       <Text style={styles.title}>登入</Text>
 
-      {/* Email 輸入框 */}
       <View style={styles.inputContainer}>
-        <Text style={styles.label}>Email</Text>
+        <Text style={styles.label}>帳號</Text>
         <TextInput
           style={styles.input}
-          placeholder="name@example.com"
-          keyboardType="email-address"
+          placeholder="請輸入帳號"
           autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
+          value={username}
+          onChangeText={setUsername}
         />
       </View>
 
-      {/* Password 輸入框 */}
       <View style={styles.inputContainer}>
-        <Text style={styles.label}>Password</Text>
+        <Text style={styles.label}>密碼</Text>
         <TextInput
           style={styles.input}
           placeholder="********"
@@ -71,12 +108,10 @@ export default function LoginScreen() {
         />
       </View>
 
-      {/* Sign In 按鈕 */}
       <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
         <Text style={styles.signInButtonText}>Sign In</Text>
       </TouchableOpacity>
 
-      {/* 忘記密碼、註冊 連結 */}
       <View style={styles.linkContainer}>
         <TouchableOpacity onPress={handleForgotPassword}>
           <Text style={styles.linkText}>忘記密碼</Text>

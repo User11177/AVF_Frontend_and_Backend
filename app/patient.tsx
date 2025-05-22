@@ -13,8 +13,8 @@ const HealthInfo = () => {
         style={styles.avatarBtn}
         onPress={() => router.push('/profile')}
       >
-        <FontAwesome name="user-circle" size={32} color="#333" />
-        <Text style={styles.avatarText}>個人頁面</Text>
+        <FontAwesome name="user-circle" size={48} color="#333" />
+        <Text style={styles.avatarText}>設定</Text>
       </TouchableOpacity>
 
       <View style={styles.container}>
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatarText: {
-    fontSize: 10,
+    fontSize: 16,
     color: '#333',
     marginTop: 2,
   },

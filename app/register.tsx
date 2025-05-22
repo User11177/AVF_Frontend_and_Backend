@@ -1,4 +1,3 @@
-// app/register.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -20,7 +19,7 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!name || !idNumber || !phone || !email || !password || !confirmPwd) {
       Alert.alert('錯誤', '請填寫所有欄位');
       return;
@@ -29,9 +28,32 @@ export default function Register() {
       Alert.alert('錯誤', '密碼與確認密碼不一致');
       return;
     }
-    // TODO: 換成你自己的註冊 API 呼叫
-    Alert.alert('註冊成功！');
-    router.replace('/');  // 註冊完跳到登入頁
+
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: idNumber,
+          password: password,
+          full_name: name,
+          email: email,
+          phone: phone,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        Alert.alert('註冊失敗', data.error || '未知錯誤');
+        return;
+      }
+
+      const data = await res.json();
+      Alert.alert('註冊成功', '帳號已建立');
+      router.replace('/');
+    } catch (err) {
+      Alert.alert('錯誤', '無法連線伺服器');
+    }
   };
 
   return (
@@ -137,7 +159,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   button: {
-    backgroundColor: '#888',
+    backgroundColor: '#007AFF',
     paddingVertical: 12,
     borderRadius: 5,
     marginTop: 10,
