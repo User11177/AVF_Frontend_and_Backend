@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { API_URL } from '../appgol_config';
+
 export default function Register() {
   const router = useRouter();
   const [name, setName] = useState('');
@@ -30,7 +32,7 @@ export default function Register() {
     }
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/register', {
+      const res = await fetch(`${API_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

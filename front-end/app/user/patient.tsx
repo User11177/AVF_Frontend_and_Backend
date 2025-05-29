@@ -2,16 +2,20 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Stack } from 'expo-router'; // ✅
 
 const HealthInfo = () => {
   const router = useRouter();
 
   return (
+        <>
+      {/* 隱藏標題列 */}
+      <Stack.Screen options={{ headerShown: false }} />
     <View style={styles.wrapper}>
       {/* 左上角的個人按鈕 */}
       <TouchableOpacity
         style={styles.avatarBtn}
-        onPress={() => router.push('/profile')}
+        onPress={() => router.push('/user/profile')}
       >
         <FontAwesome name="user-circle" size={48} color="#333" />
         <Text style={styles.avatarText}>設定</Text>
@@ -23,15 +27,16 @@ const HealthInfo = () => {
         <View style={styles.grid}>
 
 
-          <MenuButton icon="calendar" label="掛號" route="/Hospital-registration" router={router}/>
-          <MenuButton icon="search" label="掛號查詢" route="/Hospital-register-search" router={router} />
-          <MenuButton icon="heartbeat" label="堵塞偵測" route="/AI-health-check" router={router} />
-          <MenuButton icon="comment" label="醫患對話" route="/chat" router={router} />
-          <MenuButton icon="file-text" label="病例" route="/medical-record" router={router} />
-          <MenuButton icon="info-circle" label="健康資訊" route="/health-info" router={router} />
+          <MenuButton icon="calendar" label="掛號" route="/user/Hospital-registration" router={router}/>
+          <MenuButton icon="search" label="掛號查詢" route="/user/Hospital-register-search" router={router} />
+          <MenuButton icon="heartbeat" label="堵塞偵測" route="/user/AI-health-check" router={router} />
+          <MenuButton icon="comment" label="醫患對話" route="/user/chat" router={router} />
+          <MenuButton icon="file-text" label="病例" route="/user/medical-record" router={router} />
+          <MenuButton icon="info-circle" label="健康資訊" route="/user/health-info" router={router} />
         </View>
       </View>
     </View>
+    </>
   );
 };
 
@@ -56,7 +61,7 @@ type RouteType =
     router: ReturnType<typeof useRouter>;
   }) => {
     return (
-      <TouchableOpacity style={styles.button} onPress={() => router.push(route)}>
+      <TouchableOpacity style={styles.button} onPress={() => router.push(route as any)}>
         <FontAwesome name={icon} size={24} color="black" />
         <Text style={styles.buttonText}>{label}</Text>
       </TouchableOpacity>

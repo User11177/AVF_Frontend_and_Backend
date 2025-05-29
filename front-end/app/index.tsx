@@ -10,20 +10,21 @@ import {
   Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
-
+import { Stack } from 'expo-router';
+import { API_URL } from './appgol_config';
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const router = useRouter();
 
-  const BASE_URL =
-    Platform.OS === 'android'
-      ? 'http://10.0.2.2:8000'
-      : 'http://localhost:8000';
+ 
+ 
+
+
 
   const handleSignIn = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/api/login`, {
+      const res = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }) // ✅ 傳 username
@@ -46,13 +47,13 @@ export default function LoginScreen() {
         console.log('登入成功，用戶 ID:', json.user_id, '角色:', json.role);
         switch (json.role) {
           case 'doctor':
-            router.push('/doctor');
+            router.push('/doctor/doctor');
             break;
           case 'patient':
-            router.push('/patient');
+            router.push('/user/patient');
             break;
           case 'admin':
-            router.push('/bot');
+            router.push('/admin/bot');
             break;
           default:
             Alert.alert('錯誤', '無效的用戶角色');
@@ -68,21 +69,30 @@ export default function LoginScreen() {
   };
 
   const handleForgotPassword = () => {
-    router.push('/forgot-password');
+    router.push('/user/forgot-password');
   };
 
   const handleSignUp = () => {
-    router.push('/register');
+    router.push('/user/register');
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.logoContainer}>
-        <Image
-          source={{ uri: 'https://via.placeholder.com/100?text=LOGO' }}
-          style={styles.logo}
-        />
-      </View>
+    <>
+          {/* ✅ 新增：隱藏標題列 */}
+          <Stack.Screen options={{ headerShown: false }} />
+
+        <View style={styles.container}>
+          <View style={styles.logoContainer}>
+            <TouchableOpacity onPress={() => router.push('/user/aidetect')}>
+              <Image
+                source={{
+                  uri: 'https://images.seeklogo.com/logo-png/46/1/chatgpt-logo-png_seeklogo-465219.png',
+                }}
+                style={styles.logo}
+              />
+            </TouchableOpacity>
+          </View>
+
 
       <Text style={styles.title}>登入</Text>
 
@@ -121,6 +131,7 @@ export default function LoginScreen() {
         </TouchableOpacity>
       </View>
     </View>
+    </>
   );
 }
 

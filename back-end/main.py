@@ -10,6 +10,7 @@ from datetime import datetime
 import mysql.connector
 import threading
 import time
+from fastapi import Query
 app = FastAPI()
 
 # CORS 設定
@@ -171,8 +172,140 @@ threading.Thread(target=refresh_schedule).start()
 
 
 
-#SQLTO 個人資料
 
+
+
+
+
+
+
+
+
+
+
+
+# -----------------------------
+# 使用者帳號資料模型
+class CreateUserPayload(BaseModel):
+    name: str
+    role: str
+    id_number: str
+    phone: str
+    email: str
+    password: str
+
+class UpdateUserPayload(BaseModel):
+    name: str
+    role: str
+    id_number: str
+    phone: str
+    email: str
+
+# 取得所有帳號資料（JOIN 病患）
+@app.get("/api/users")
+def get_all_users():
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT
+            u.id,
+            u.username AS name,
+            u.role,
+            p.id_number,
+            p.phone
+        FROM users u
+        LEFT JOIN patients p ON u.id = p.user_id
+    """)
+    users = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return users
+
+# 查詢單一帳號
+@app.get("/api/users/{user_id}")
+def get_user(user_id: int):
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT
+            u.id,
+            u.username AS name,
+            u.role,
+            p.id_number,
+            p.phone,
+            u.email
+        FROM users u
+        LEFT JOIN patients p ON u.id = p.user_id
+        WHERE u.id = %s
+    """, (user_id,))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not user:
+        raise HTTPException(status_code=404, detail="找不到帳號")
+    return user
+
+# 新增帳號（同步新增病患資料）
+@app.post("/api/users")
+def create_user(payload: CreateUserPayload):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # 寫入 users 表，只存 username（帳號）、role、password
+    cursor.execute("""
+        INSERT INTO users (username, role, password)
+        VALUES (%s, %s, %s)
+    """, (payload.name, payload.role, payload.password))
+    user_id = cursor.lastrowid
+
+    # 如果是病患才寫入 patients 表
+    if payload.role == "patient":
+        cursor.execute("""
+            INSERT INTO patients (user_id, full_name, id_number, email, phone)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (user_id, payload.name, payload.id_number, payload.email, payload.phone))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"message": "帳號建立成功"}
+
+# 編輯帳號（同步更新病患資料）
+@app.put("/api/users/{user_id}")
+def update_user(user_id: int, payload: UpdateUserPayload):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE users
+        SET username = %s, role = %s, email = %s, phone = %s
+        WHERE id = %s
+    """, (payload.name, payload.role, payload.email, payload.phone, user_id))
+
+    cursor.execute("""
+        UPDATE patients
+        SET full_name = %s, id_number = %s, email = %s, phone = %s
+        WHERE user_id = %s
+    """, (payload.name, payload.id_number, payload.email, payload.phone, user_id))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"message": "帳號已更新"}
+
+# 刪除帳號（病患會自動被刪）
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"message": "帳號已刪除"}
+
+# -----------------------------
+# 病患個資模型
 class PatientUpdate(BaseModel):
     full_name: str
     id_number: str
@@ -183,12 +316,13 @@ class PatientUpdate(BaseModel):
     emergency_name: str
     emergency_phone: str
 
+# 查詢病患個資
 @app.get("/api/patient/{user_id}")
 def get_patient_info(user_id: int):
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
-        SELECT u.username, p.full_name,p.id_number, p.email, p.phone, p.birthdate, p.address,
+        SELECT u.username, p.full_name, p.id_number, p.email, p.phone, p.birthdate, p.address,
                p.emergency_name, p.emergency_phone
         FROM patients p
         JOIN users u ON p.user_id = u.id
@@ -201,13 +335,15 @@ def get_patient_info(user_id: int):
         raise HTTPException(status_code=404, detail="找不到病患資料")
     return row
 
+# 更新病患個資
 @app.put("/api/patient/{user_id}")
 def update_patient_info(user_id: int, payload: PatientUpdate):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE patients
-        SET full_name=%s,id_number=%s, email=%s, phone=%s, birthdate=%s, address=%s, emergency_name=%s, emergency_phone=%s
+        SET full_name=%s, id_number=%s, email=%s, phone=%s, birthdate=%s,
+            address=%s, emergency_name=%s, emergency_phone=%s
         WHERE user_id=%s
     """, (
         payload.full_name,
@@ -225,3 +361,16 @@ def update_patient_info(user_id: int, payload: PatientUpdate):
     conn.close()
     return {"message": "病患資料已更新"}
 
+# 依身分證查病患
+@app.get("/api/patient/search")
+def get_patient(id: str = Query(...)):
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM patients WHERE id_number = %s", (id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="找不到此身分證對應的病患")
+    return row

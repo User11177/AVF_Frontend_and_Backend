@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import moment from 'moment';
+import { Stack } from 'expo-router'; // ✅
+import { API_URL } from '../appgol_config';
 
-const API_URL = "http://10.0.2.2:8000";
+
 const ITEM_WIDTH = 60; // FlatList 每個日期框的寬度，含 margin
 
 // 後端 Hospital 代碼對照
@@ -125,6 +127,9 @@ export default function HospitalRegistration() {
   };
 
   return (
+        <>
+      {/* ✅ 新增：隱藏標題列 */}
+      <Stack.Screen options={{ headerShown: false }} />
     <ScrollView style={styles.container}>
       <Text style={styles.header}>掛號 ({selectedDate})</Text>
 
@@ -263,6 +268,7 @@ export default function HospitalRegistration() {
         ))
       )}
     </ScrollView>
+    </>
   );
 }
 
