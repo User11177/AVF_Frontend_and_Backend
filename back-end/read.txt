@@ -1,0 +1,16 @@
+backend/
+├── main.py                  # FastAPI 主入口，全局設定/匯入 router
+├── db.py                    # 資料庫連線共用函式
+├── utils.py                 # 共用工具（加密、寄信、產碼、雜湊等）
+│
+├── routers/
+│   ├── auth.py              # 註冊/登入/驗證/密碼重設
+│   ├── users.py             # 帳號管理
+│   ├── patient.py           # 病患資料
+│   ├── schedule.py          # 醫師排班（爬蟲）
+│   ├── announcement.py      # 公告管理
+│   ├── health_info.py       # 健康資訊
+│   └── predict.py           # AI 偵測 API
+│
+├── models.py                # Pydantic models 共用定義（如要集中管理）
+└── logs/                    # Loguru 日誌目錄（自動建立）

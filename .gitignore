@@ -1,0 +1,15 @@
+"*.apk" *.apk
+*.aab
+*.ipa
+android/app/build/
+ios/build/
+*.apk
+*.aab
+*.ipa
+android/app/build/
+ios/build/
+*.apk
+*.aab
+*.ipa
+android/app/build/
+ios/build/
