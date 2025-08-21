@@ -10,7 +10,7 @@ from loguru import logger
 
 router = APIRouter()
 
-@router.get("/schedule/refresh")
+@router.get("/api/schedule/refresh")
 def refresh_schedule():
     try:
         BASE = "https://webreg.edah.org.tw"
@@ -66,7 +66,7 @@ def refresh_schedule():
         logger.error(f"❌ 排程主體錯誤：{e}")
         return {"error": str(e)}
 
-@router.get("/schedule")
+@router.get("/api/schedule")
 def get_schedule():
     conn = get_db()
     cursor = conn.cursor(dictionary=True)

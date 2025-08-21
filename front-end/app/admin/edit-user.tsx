@@ -33,6 +33,7 @@ export default function EditUserScreen() {
     const payload: any = {
       full_name: user.full_name,
       id_number: user.id_number,
+      mrn: user.mrn || undefined,
       phone: user.phone,
       email: user.email,
       birthdate: user.birthdate || undefined,
@@ -69,6 +70,7 @@ export default function EditUserScreen() {
         <Text style={styles.title}>編輯帳號</Text>
         <TextInput style={styles.input} placeholder="姓名" value={user.full_name} onChangeText={v => setUser({ ...user, full_name: v })} />
         <TextInput style={styles.input} placeholder="身分證字號" value={user.id_number} onChangeText={v => setUser({ ...user, id_number: v })} />
+        <TextInput style={styles.input} placeholder="病例號(MRN)" value={user.mrn || ''} onChangeText={v => setUser({ ...user, mrn: v })} />
         <TextInput style={styles.input} placeholder="電話" value={user.phone} onChangeText={v => setUser({ ...user, phone: v })} />
         <TextInput style={styles.input} placeholder="Email" value={user.email} onChangeText={v => setUser({ ...user, email: v })} keyboardType="email-address" />
         <TextInput style={styles.input} placeholder="生日（YYYY-MM-DD）" value={user.birthdate || ''} onChangeText={v => setUser({ ...user, birthdate: v })} />

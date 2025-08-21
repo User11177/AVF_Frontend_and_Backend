@@ -9,7 +9,7 @@ export default function RegisterSearchWebPage() {
   const [birthdate, setBirthdate] = useState('');
 
   useEffect(() => {
-    // 從 AsyncStorage 取得 id_number, birthdate
+    // 取得 id_number, birthdate
     AsyncStorage.getItem('user_id_number').then(val => setIdNumber(val || ''));
     AsyncStorage.getItem('user_birthdate').then(val => setBirthdate(val || ''));
   }, []);

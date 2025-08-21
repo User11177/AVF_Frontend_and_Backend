@@ -6,7 +6,7 @@ from utils import get_current_user
 router = APIRouter()
 
 # 查詢病患個資
-@router.get("/patient/{user_id}")
+@router.get("/api/patient/{user_id}")
 def get_patient_info(user_id: int, user=Depends(get_current_user())):
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
@@ -25,7 +25,7 @@ def get_patient_info(user_id: int, user=Depends(get_current_user())):
     return row
 
 # 更新病患個資
-@router.put("/patient/{user_id}")
+@router.put("/api/patient/{user_id}")
 def update_patient_info(user_id: int, payload: PatientUpdate, user=Depends(get_current_user())):
     conn = get_db()
     cursor = conn.cursor()
@@ -51,7 +51,7 @@ def update_patient_info(user_id: int, payload: PatientUpdate, user=Depends(get_c
     return {"message": "病患資料已更新"}
 
 # 依身分證查病患
-@router.get("/patient/search")
+@router.get("/api/patient/search")
 def get_patient(id: str = Query(...), user=Depends(get_current_user())):
     conn = get_db()
     cursor = conn.cursor(dictionary=True)

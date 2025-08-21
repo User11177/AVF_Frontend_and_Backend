@@ -6,7 +6,7 @@ from utils import get_current_user
 router = APIRouter()
 
 # 取得公告列表
-@router.get("/announcements")
+@router.get("/api/announcements")
 def get_announcements():
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
@@ -21,7 +21,7 @@ ORDER BY a.published_at DESC
     return {"success": True, "data": rows}
 
 # 新增公告
-@router.post("/announcements")
+@router.post("/api/announcements")
 def create_announcement(payload: AnnouncementCreate, user=Depends(get_current_user())):
     conn = get_db()
     cursor = conn.cursor()
@@ -35,7 +35,7 @@ def create_announcement(payload: AnnouncementCreate, user=Depends(get_current_us
     return {"success": True, "message": "公告已新增"}
 
 # 編輯公告
-@router.put("/announcements/{announcement_id}")
+@router.put("/api/announcements/{announcement_id}")
 def update_announcement(announcement_id: int, payload: AnnouncementUpdate, user=Depends(get_current_user())):
     conn = get_db()
     cursor = conn.cursor()
@@ -49,7 +49,7 @@ def update_announcement(announcement_id: int, payload: AnnouncementUpdate, user=
     return {"success": True, "message": "公告已更新"}
 
 # 刪除公告
-@router.delete("/announcements/{announcement_id}")
+@router.delete("/api/announcements/{announcement_id}")
 def delete_announcement(announcement_id: int, user=Depends(get_current_user())):
     conn = get_db()
     cursor = conn.cursor()

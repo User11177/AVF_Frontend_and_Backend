@@ -31,8 +31,9 @@ export default function Profile() {
   // 2. Google 連結流程參考 index.tsx
   const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
     clientId: '794306785311-lrr23m7g6fv43vibr8nebteqdas9ipj2.apps.googleusercontent.com',
-    redirectUri: 'https://auth.expo.io/@user1117/rnProject',
+    redirectUri: 'https://auth.expo.io/@user1117/rnProject',  // 使用 Expo 認證服務
     scopes: ['openid', 'profile', 'email'],
+    // 移除 responseType，讓 Expo 自動處理
   });
   useEffect(() => {
     if (googleResponse?.type === 'success') {
@@ -51,11 +52,12 @@ export default function Profile() {
               if (data.refresh_token) {
                 await AsyncStorage.setItem('refresh_token', data.refresh_token);
               }
-              await AsyncStorage.setItem('user_id', String(data.user.id || ''));
-              await AsyncStorage.setItem('user_phone', data.user.phone || '');
-              await AsyncStorage.setItem('user_email', data.user.email || '');
-              await AsyncStorage.setItem('user_id_number', data.user.id_number || '');
-              await AsyncStorage.setItem('user_birthdate', data.user.birthdate || '');
+                             await AsyncStorage.setItem('user_id', String(data.user.id || ''));
+               await AsyncStorage.setItem('user_phone', data.user.phone || '');
+               await AsyncStorage.setItem('user_email', data.user.email || '');
+               await AsyncStorage.setItem('user_id_number', data.user.id_number || '');
+               await AsyncStorage.setItem('user_birthdate', data.user.birthdate || '');
+               await AsyncStorage.setItem('user_mrn', data.user.mrn || '');
               Alert.alert('Google 連結成功');
               setProfile(data.user);
             } else {
@@ -153,6 +155,7 @@ export default function Profile() {
       ...(profile.phone ? { phone: profile.phone } : {}),
       ...(editProfile.email ? { email: editProfile.email } : {}),
       id_number: editProfile.id_number,
+      mrn: editProfile.mrn,
       full_name: editProfile.full_name,
       birthdate: editProfile.birthdate,
       address: editProfile.address,
@@ -179,6 +182,7 @@ export default function Profile() {
         setProfile({ ...profile, ...editProfile });
         await AsyncStorage.setItem('user_id_number', editProfile.id_number || '');
         await AsyncStorage.setItem('user_birthdate', editProfile.birthdate || '');
+        await AsyncStorage.setItem('user_mrn', editProfile.mrn || '');
         Alert.alert('儲存成功');
         setEditMode(false);
       } else {
@@ -265,6 +269,7 @@ export default function Profile() {
         <InfoField label="姓名" icon="user" value={editMode ? (editProfile.full_name ?? '') : (profile?.full_name ?? '')} editable={editMode} onChange={v => setEditProfile({ ...editProfile, full_name: v })} />
         {/* 新增身分證字號欄位 */}
         <InfoField label="身分證字號" icon="id-card" value={editMode ? (editProfile.id_number ?? '') : (profile?.id_number ?? '')} editable={editMode} onChange={v => setEditProfile({ ...editProfile, id_number: v })} />
+        <InfoField label="病例號(MRN)" icon="hospital-o" value={editMode ? (editProfile.mrn ?? '') : (profile?.mrn ?? '')} editable={editMode} onChange={v => setEditProfile({ ...editProfile, mrn: v })} />
         <InfoField label="Email" icon="envelope" value={profile?.email ?? ''} editable={false} extra={<TouchableOpacity onPress={()=>setChangeField('email')}><Text style={{color:'#007AFF'}}>變更</Text></TouchableOpacity>} />
         <InfoField label="電話" icon="phone" value={profile?.phone ?? ''} editable={false} extra={<TouchableOpacity onPress={()=>setChangeField('phone')}><Text style={{color:'#007AFF'}}>變更</Text></TouchableOpacity>} />
         <InfoField

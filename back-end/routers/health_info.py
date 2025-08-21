@@ -4,7 +4,7 @@ from db import get_db
 router = APIRouter()
 
 # 取得健康資訊
-@router.get("/health-info")
+@router.get("/api/health-info")
 def get_health_info():
     conn = get_db()
     cursor = conn.cursor(dictionary=True)

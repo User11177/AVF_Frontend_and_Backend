@@ -7,13 +7,14 @@ export default function DoctorHome() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>醫師首頁</Text>
-      <TouchableOpacity style={styles.card} onPress={() => router.push('/user/chat')}>
-        <Text style={styles.cardTitle}>1. 醫患對話</Text>
-        <Text>與患者即時溝通、回覆訊息</Text>
+      <TouchableOpacity style={styles.card} onPress={() => router.push('/doctor/patient-search')}>
+        <Text style={styles.cardTitle}>1. 搜尋病患與病歷檢視</Text>
+        <Text>搜尋病患資料、查看病歷與AI檢測判斷結果</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.card} onPress={() => router.push('/doctor/medical-record')}>
-        <Text style={styles.cardTitle}>2. 患者病歷/堵塞結果查詢</Text>
-        <Text>查詢患者歷史病歷與AI堵塞判斷結果</Text>
+      
+      <TouchableOpacity style={styles.card} onPress={() => router.push('/chat')}>
+        <Text style={styles.cardTitle}>2. 醫患對話</Text>
+        <Text>與患者即時溝通、回覆訊息</Text>
       </TouchableOpacity>
     </View>
   );

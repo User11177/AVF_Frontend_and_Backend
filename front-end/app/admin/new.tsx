@@ -15,6 +15,7 @@ export default function AddUserScreen() {
   // 1. 移除 role 相關 state
   const [fullName, setFullName] = useState('');
   const [idNumber, setIdNumber] = useState('');
+  const [mrn, setMrn] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [birthdate, setBirthdate] = useState('');
@@ -32,6 +33,7 @@ export default function AddUserScreen() {
     const payload = {
       full_name: fullName,
       id_number: idNumber,
+      mrn: mrn || undefined,
       phone,
       email,
       password,
@@ -89,6 +91,7 @@ export default function AddUserScreen() {
         {/* 2. 表單只顯示 users 表有的欄位 */}
         <TextInput style={styles.input} placeholder="姓名" value={fullName} onChangeText={setFullName} />
         <TextInput style={styles.input} placeholder="身分證字號" value={idNumber} onChangeText={setIdNumber} />
+        <TextInput style={styles.input} placeholder="病例號(MRN)" value={mrn} onChangeText={setMrn} />
         <TextInput style={styles.input} placeholder="電話" value={phone} onChangeText={setPhone} />
         <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
         <TextInput style={styles.input} placeholder="生日（YYYY-MM-DD）" value={birthdate} onChangeText={setBirthdate} />

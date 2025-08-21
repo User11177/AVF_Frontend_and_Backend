@@ -53,6 +53,7 @@ class CreateUserPayload(BaseModel):
     full_name: str = None
     role: str = 'patient'
     id_number: str = None
+    mrn: str = None
     phone: str = None
     email: str = None
     password: str = None
@@ -68,6 +69,7 @@ class UpdateUserPayload(BaseModel):
     full_name: str = None
     role: str = None
     id_number: str = None
+    mrn: str = None
     phone: str = None
     email: str = None
     password: str = None
