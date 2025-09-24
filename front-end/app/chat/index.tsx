@@ -1,6 +1,4 @@
-// chat/index.tsx
-// 客服式聊天室列表 - 病患看自己的諮詢，醫師看所有病患諮詢
-
+ 
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -185,7 +183,7 @@ export default function ChatListPage() {
         {item.unread_count > 0 && (
           <View style={styles.unreadBadge}>
             <Text style={styles.unreadText}>
-              {item.unread_count > 99 ? '99+' : item.unread_count}
+              {item.unread_count > 99 ? '99+' : (item.unread_count || 0)}
             </Text>
           </View>
         )}
@@ -196,7 +194,7 @@ export default function ChatListPage() {
         <View style={styles.titleRow}>
           <Text style={styles.chatTitle}>
             {userRole === 'doctor' ? 
-              `${item.patient_name}的諮詢` : 
+              `${item.patient_name || '病患'}的諮詢` : 
               '醫療諮詢'
             }
           </Text>
@@ -207,8 +205,8 @@ export default function ChatListPage() {
         
         {userRole === 'doctor' && (
           <Text style={styles.patientInfo}>
-            {item.patient_mrn && `病歷號: ${item.patient_mrn}`}
-            {item.patient_phone && ` | ${item.patient_phone}`}
+            {item.patient_mrn ? `病歷號: ${item.patient_mrn || ''}` : ''}
+            {item.patient_phone ? ` | ${item.patient_phone || ''}` : ''}
           </Text>
         )}
         
@@ -229,7 +227,7 @@ export default function ChatListPage() {
               ]} 
               numberOfLines={1}
             >
-              {item.last_message}
+              {item.last_message || ''}
             </Text>
           </View>
         )}

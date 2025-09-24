@@ -230,7 +230,7 @@ export default function PatientDetailPage() {
         {/* 快速操作 */}
         <View style={styles.section}>
           <TouchableOpacity style={styles.chatButton} onPress={handleOpenChat}>
-            <Text style={styles.chatButtonText}>💬 開啟對話</Text>
+            <Text style={styles.chatButtonText}>開啟對話</Text>
           </TouchableOpacity>
         </View>
 

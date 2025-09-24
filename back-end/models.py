@@ -1,4 +1,6 @@
+from __future__ import annotations
 from pydantic import BaseModel
+from typing import List, Optional
 
 #0
 class RegisterSMSPayload(BaseModel):
@@ -94,4 +96,45 @@ class HealthInfo(BaseModel):
     id: int
     title: str
     content: str
-    updated_at: str 
+    updated_at: str
+
+# ============================================================================
+# 管理員功能相關模型
+# ============================================================================
+
+class MaintenanceToggle(BaseModel):
+    """維護模式切換請求模型"""
+    maintenance: bool
+
+class SystemHealthStatus(BaseModel):
+    """系統健康狀態模型"""
+    api: bool
+    db: bool
+    uploads_writable: bool
+
+class UserStatistics(BaseModel):
+    """用戶統計模型"""
+    admin_count: int
+    doctor_count: int
+    patient_count: int
+    total_users: int
+    last_updated: str
+
+class ErrorLogItem(BaseModel):
+    """錯誤日誌項目模型"""
+    error_code: str
+    count: int
+    last_occurred: str
+    description: Optional[str] = None
+
+class ErrorLogsData(BaseModel):
+    """錯誤日誌回應模型"""
+    total_errors: int
+    top_errors: List[ErrorLogItem]
+    last_updated: str
+
+class MaintenanceStatus(BaseModel):
+    """維護模式狀態模型"""
+    enabled: bool
+    last_updated: Optional[str] = None
+    updated_by: Optional[int] = None 

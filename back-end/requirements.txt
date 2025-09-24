@@ -1,5 +1,15 @@
 fastapi
-uvicorn
+uvicorn[standard]
+websockets
 mysql-connector-python
 requests
 beautifulsoup4
+slowapi
+loguru
+python-dotenv
+cryptography
+argon2-cffi
+twilio
+pyjwt
+pydantic
+python-multipart

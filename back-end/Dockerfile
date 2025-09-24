@@ -1,20 +1,33 @@
-# 使用官方 Python 基底映像
-FROM python:3.10
-#pip
-#RUN pip install FastAPI CORSMiddleware requests BeautifulSoup mysql.connector threading time
+# 使用Python 3.10作為基礎鏡像
+FROM python:3.10-slim
 
-# 設定工作目錄
+# 設置工作目錄
 WORKDIR /app
 
-# 複製 requirements（如果有 requirements.txt）或先複製全部
-COPY requirements.txt ./
+# 安裝系統依賴
+RUN apt-get update && apt-get install -y \
+    gcc \
+    default-libmysqlclient-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# 複製requirements.txt（從back-end目錄）
+COPY back-end/requirements.txt .
+
+# 安裝Python依賴
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製後端所有檔案
-COPY . .
+# 複製後端應用代碼
+COPY back-end/ .
 
-# 開放 port
+# 複製SQL文件到指定位置（如果需要的話）
+COPY sql/ ./sql/
+
+# 創建日誌目錄
+RUN mkdir -p logs
+
+# 暴露端口8000
 EXPOSE 8000
 
-# 啟動指令
+# 啟動命令
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -74,7 +74,7 @@ logger.add(
 # =================================
 # 路由器模組導入
 # =================================
-from routers import auth, users, patient, schedule, announcement, health_info, samples, doctor, chat, websocket
+from routers import auth, users, patient, schedule, announcement, health_info, samples, doctor, chat, websocket, admin
 
 # =================================
 # 集中配置 API 速率限制
@@ -133,6 +133,55 @@ app.include_router(health_info.router)    # 健康資訊路由
 app.include_router(samples.router)        # 樣本管理路由
 app.include_router(doctor.router)         # 醫師功能路由
 app.include_router(chat.router)           # 聊天室路由
+app.include_router(admin.router)          # 管理員功能路由
+
+# =================================
+# 維護模式中間件
+# =================================
+from fastapi import Request
+from routers.admin import is_maintenance_mode, get_maintenance_response
+
+@app.middleware("http")
+async def maintenance_middleware(request: Request, call_next):
+    """
+    維護模式中間件
+    當系統處於維護模式時，攔截所有寫入操作
+    
+    ⚠️  重要安全考量：
+    - 必須允許管理員登入，否則無人能關閉維護模式
+    - 必須允許 token 刷新，維持管理員會話
+    - 必須允許管理員 API，確保系統可管理性
+    """
+    # 檢查是否處於維護模式
+    if is_maintenance_mode():
+        # 允許的路徑：健康檢查、管理員API、讀取操作、必要的認證功能
+        allowed_paths = [
+            "/health",
+            "/api/admin/",
+            "/api/announcements",    # 允許讀取公告
+            "/api/auth/refresh",     # 允許刷新token
+            "/api/auth/login",       # 🔑 允許登入（管理員必須能登入才能關閉維護模式）
+            "/api/auth/google-login", # 允許 Google 登入
+            "/api/auth/request-reset", # 允許請求重置密碼（防止管理員忘記密碼）
+            "/api/auth/reset-password", # 允許重置密碼
+            "/api/oauth/redirect",    # 允許 Google OAuth ID Token 重導
+            "/api/oauth/google/callback", # 允許 Google OAuth 回調
+            "/api/auth/google-callback",  # 允許 Google 認證回調
+        ]
+        
+        # 檢查是否為允許的路徑
+        path_allowed = any(request.url.path.startswith(path) for path in allowed_paths)
+        
+        # 檢查是否為寫入操作
+        is_write_operation = request.method in ["POST", "PUT", "PATCH", "DELETE"]
+        
+        # 如果是寫入操作且不在允許列表中，返回維護模式回應
+        if is_write_operation and not path_allowed:
+            return get_maintenance_response()
+    
+    # 正常處理請求
+    response = await call_next(request)
+    return response
 
 # =================================
 # 背景任務：自動排程爬蟲

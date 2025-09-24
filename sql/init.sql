@@ -124,12 +124,6 @@ SELECT * FROM analysis_results;
 SELECT * FROM chat_messages;
 SELECT * FROM chat_rooms;
 
-INSERT INTO users 
-(phone, email, password_hash, google_id, line_id, apple_id, role, full_name, id_number, mrn, birthdate, address, emergency_name, emergency_phone, email_verified, phone_verified)
-VALUES
-('0911222333', 'user1@mail.com', '$2b$12$examplehashpassword1234567890', NULL, NULL, NULL, 'patient', '王小明', 'A123456789', 'MRN0007', '1998-04-12', '台中市北區進化路200號', '父親', '0922333444', TRUE, TRUE);
-
-
 
 #DELETE FROM analysis_results;
 #ALTER TABLE analysis_results AUTO_INCREMENT = 1;
@@ -137,3 +131,8 @@ VALUES
 #ALTER TABLE measurements AUTO_INCREMENT = 1;
 #DROP TABLE IF EXISTS chat_messages;
 #DROP TABLE IF EXISTS chat_rooms;
+
+-- 5. 設定用戶權限
+-- 確保 avfcare_user 對 app_db 有完整權限
+GRANT ALL PRIVILEGES ON app_db.* TO 'avfcare_user'@'%';
+FLUSH PRIVILEGES;

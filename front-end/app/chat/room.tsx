@@ -19,6 +19,7 @@ import { authFetch } from '../../utils/authFetch';
 import { API_URL } from '../../utils/appgol_config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+
 interface ChatMessage {
   id: number;
   chat_room_id: number;
@@ -44,6 +45,8 @@ export default function ChatRoomPage() {
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
   
   const flatListRef = useRef<FlatList>(null);
+  
+
 
   // 載入聊天訊息
   const loadMessages = async () => {
@@ -66,6 +69,8 @@ export default function ChatRoomPage() {
       setLoading(false);
     }
   };
+
+
 
   // 發送訊息
   const sendMessage = async () => {
@@ -112,13 +117,22 @@ export default function ChatRoomPage() {
   };
 
   // 建立 WebSocket 連接
-  const setupWebSocket = () => {
+  const setupWebSocket = async () => {
     if (!userId) return;
 
-    // 處理 ngrok HTTPS -> WSS 的轉換
-    const wsUrl = `${API_URL.replace('https://', 'wss://').replace('http://', 'ws://')}/ws/chat/${userId}`;
-    console.log('[WebSocket] 嘗試連接到:', wsUrl);
-    const ws = new WebSocket(wsUrl);
+    try {
+      // 取得 JWT token
+      const token = await AsyncStorage.getItem('access_token');
+      if (!token) {
+        console.error('[WebSocket] 缺少 JWT token');
+        Alert.alert('錯誤', '請重新登入');
+        return;
+      }
+
+      // 處理 ngrok HTTPS -> WSS 的轉換，並加入 JWT token
+      const wsUrl = `${API_URL.replace('https://', 'wss://').replace('http://', 'ws://')}/ws/chat/${userId}?token=${encodeURIComponent(token)}`;
+      console.log('[WebSocket] 嘗試連接到:', wsUrl);
+      const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       console.log('WebSocket 連接成功');
@@ -136,8 +150,10 @@ export default function ChatRoomPage() {
         const data = JSON.parse(event.data);
         
         if (data.type === 'new_message' && data.chat_room_id === parseInt(chatRoomId as string)) {
+          const newMessage = data.message;
+          
           // 收到新訊息，添加到列表
-          setMessages(prev => [...prev, data.message]);
+          setMessages(prev => [...prev, newMessage]);
           
           // 滾動到底部
           setTimeout(() => {
@@ -153,15 +169,19 @@ export default function ChatRoomPage() {
       console.log('WebSocket 錯誤:', error);
     };
 
-    ws.onclose = () => {
-      console.log('WebSocket 連接關閉');
-      setWsConnection(null);
-      
-      // 嘗試重新連接
-      setTimeout(() => {
-        setupWebSocket();
-      }, 3000);
-    };
+          ws.onclose = () => {
+        console.log('WebSocket 連接關閉');
+        setWsConnection(null);
+        
+        // 嘗試重新連接
+        setTimeout(() => {
+          setupWebSocket();
+        }, 3000);
+      };
+    } catch (error) {
+      console.error('[WebSocket] 連接建立失敗:', error);
+      Alert.alert('錯誤', 'WebSocket 連接失敗，請稍後再試');
+    }
   };
 
   // 格式化時間
@@ -189,7 +209,7 @@ export default function ChatRoomPage() {
             styles.senderName,
             isDoctor ? styles.doctorName : styles.patientName
           ]}>
-            {isDoctor ? `👨‍⚕️ ${item.sender_name}` : `🙋 ${item.sender_name}`}
+            {isDoctor ? `醫師 ${item.sender_name || ''}` : `病患 ${item.sender_name || ''}`}
           </Text>
         )}
         
@@ -202,7 +222,7 @@ export default function ChatRoomPage() {
             styles.messageText,
             isMyMessage ? styles.myMessageText : styles.otherMessageText
           ]}>
-            {item.content}
+            {item.content || ''}
           </Text>
           
           <Text style={[
@@ -227,6 +247,8 @@ export default function ChatRoomPage() {
         setUserRole(userData.role || '');
         setUserId(parseInt(id || '0'));
         
+
+        
         // 載入訊息
         await loadMessages();
       } catch (error) {
@@ -236,6 +258,8 @@ export default function ChatRoomPage() {
     };
 
     initChat();
+    
+
   }, [chatRoomId]);
 
   useEffect(() => {
@@ -266,7 +290,7 @@ export default function ChatRoomPage() {
     >
       <Stack.Screen 
         options={{ 
-          title: userRole === 'doctor' ? `${patientName}的諮詢` : '醫療諮詢',
+          title: userRole === 'doctor' ? `${patientName || '病患'}的諮詢` : '醫療諮詢',
           headerStyle: { backgroundColor: '#2196F3' },
           headerTintColor: '#fff'
         }} 
@@ -275,7 +299,7 @@ export default function ChatRoomPage() {
       {/* 連接狀態指示 */}
       {!wsConnection && (
         <View style={styles.connectionBanner}>
-          <Text style={styles.connectionText}>⚠️ 正在重新連接...</Text>
+          <Text style={styles.connectionText}>正在重新連接...</Text>
         </View>
       )}
       

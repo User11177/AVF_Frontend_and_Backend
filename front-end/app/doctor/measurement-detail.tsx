@@ -204,7 +204,7 @@ export default function MeasurementDetailPage() {
               <>
                 <View style={styles.infoRow}>
                   <Text style={styles.label}>音頻檔案:</Text>
-                  <Text style={styles.value}>✓ 已上傳</Text>
+                  <Text style={styles.value}>已上傳</Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.label}>檔案大小:</Text>
@@ -217,7 +217,7 @@ export default function MeasurementDetailPage() {
               <>
                 <View style={styles.infoRow}>
                   <Text style={styles.label}>振動檔案:</Text>
-                  <Text style={styles.value}>✓ 已上傳</Text>
+                  <Text style={styles.value}>已上傳</Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.label}>檔案大小:</Text>
@@ -273,7 +273,7 @@ export default function MeasurementDetailPage() {
                   measurement.result === 'good' ? styles.goodSummary : styles.badSummary
                 ]}>
                   <Text style={styles.summaryTitle}>
-                    {measurement.result === 'good' ? '✓ 檢測結果正常' : '⚠️ 檢測發現異常'}
+                    {measurement.result === 'good' ? '檢測結果正常' : '檢測發現異常'}
                   </Text>
                   <Text style={styles.summaryText}>
                     {measurement.result === 'good' 
@@ -297,7 +297,7 @@ export default function MeasurementDetailPage() {
         {/* 快速操作 */}
         <View style={styles.section}>
           <TouchableOpacity style={styles.chatButton} onPress={handleOpenChat}>
-            <Text style={styles.chatButtonText}>💬 與病患對話</Text>
+            <Text style={styles.chatButtonText}>與病患對話</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

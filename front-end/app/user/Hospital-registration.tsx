@@ -21,7 +21,6 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import moment from 'moment';
-import { Stack } from 'expo-router';
 import { API_URL } from '../../utils/appgol_config';
 
 // 每個日期框的寬度設定（含邊距）
@@ -140,6 +139,17 @@ export default function HospitalRegistration() {
   }, [schedule, selectedDate, selectedShift]);
 
   /**
+   * 檢查指定日期和時段是否有排班
+   */
+  const hasScheduleForShift = (date: string, shiftNo: string) => {
+    const docs = schedule[date] || [];
+    return docs.some(doc => {
+      const p = new URLSearchParams(doc.url.split('?')[1]);
+      return p.get('ShiftNo') === shiftNo;
+    });
+  };
+
+  /**
    * 處理週次變更
    * 可向前或向後切換一週
    */
@@ -158,10 +168,18 @@ export default function HospitalRegistration() {
     router.push(url as any);
   };
 
+  /**
+   * 處理時段選擇
+   */
+  const handleShiftSelect = (shiftNo: string) => {
+    // 檢查選擇的時段是否有排班
+    if (hasScheduleForShift(selectedDate, shiftNo)) {
+      setSelectedShift(shiftNo);
+    }
+  };
+
   return (
     <>
-      {/* 隱藏標題列 */}
-      <Stack.Screen options={{ headerShown: false }} />
       <ScrollView style={styles.container}>
         <Text style={styles.header}>掛號 ({selectedDate})</Text>
 
@@ -239,24 +257,35 @@ export default function HospitalRegistration() {
 
         {/* 時段選擇 */}
         <View style={styles.shiftsRow}>
-          {shifts.map(s => (
-            <TouchableOpacity
-              key={s.shiftNo}
-              style={[
-                styles.shiftBtn,
-                selectedShift === s.shiftNo && styles.shiftBtnActive
-              ]}
-              onPress={() => setSelectedShift(s.shiftNo)}
-            >
-              <Text style={
-                selectedShift === s.shiftNo
-                  ? styles.shiftTextActive
-                  : styles.shiftText
-              }>
-                {s.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {shifts.map(s => {
+            const hasSchedule = hasScheduleForShift(selectedDate, s.shiftNo);
+            const isActive = selectedShift === s.shiftNo;
+            const isDisabled = !hasSchedule;
+            
+            return (
+              <TouchableOpacity
+                key={s.shiftNo}
+                style={[
+                  styles.shiftBtn,
+                  isActive && styles.shiftBtnActive,
+                  isDisabled && styles.shiftBtnDisabled
+                ]}
+                onPress={() => handleShiftSelect(s.shiftNo)}
+                disabled={isDisabled}
+              >
+                <Text style={[
+                  styles.shiftText,
+                  isActive && styles.shiftTextActive,
+                  isDisabled && styles.shiftTextDisabled
+                ]}>
+                  {s.label}
+                </Text>
+                {isDisabled && (
+                  <Text style={styles.noScheduleText}>無排班</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* 醫生列表 */}
@@ -378,11 +407,23 @@ const styles = StyleSheet.create({
   shiftBtnActive: {
     backgroundColor: '#007AFF'
   },
+  shiftBtnDisabled: {
+    backgroundColor: '#ccc',
+    opacity: 0.7
+  },
   shiftText: {
     color: '#333'
   },
   shiftTextActive: {
     color: '#fff'
+  },
+  shiftTextDisabled: {
+    color: '#999'
+  },
+  noScheduleText: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4
   },
   hospitalBlock: {
     backgroundColor: '#fff',

@@ -18,8 +18,11 @@
  * 並更新為新的隧道 URL
  */
 
-// 正式環境 URL (上線時使用)
-// export const API_URL = 'https://avfcare.com';    
+// 正式環境 URL (現在使用正式域名)
+ //export const API_URL = 'https://avfcare.com';    
+ 
+// 本地測試環境 URL (連接到本地 Docker 後端)
+//export const API_URL = "http://localhost:8000";
 
-// 開發環境 URL (目前使用 ngrok 隧道)
-export const API_URL = "https://b7ae1d4d628d.ngrok-free.app";
+// 開發環境 URL (如需本地測試時使用)
+export const API_URL = "https://8d46cccf3ee5.ngrok-free.app";

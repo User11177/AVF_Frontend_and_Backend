@@ -1,12 +1,13 @@
 # chat.py
 # 客服式聊天室路由 - 病患提問，所有醫師可回答
 
-from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
 from db import get_db
 from utils import get_current_user, decode_token
 from datetime import datetime
 from typing import List, Dict
 import json
+from loguru import logger
 from .websocket import WebSocketService, manager
 
 router = APIRouter()
@@ -395,16 +396,45 @@ def get_chat_room_detail(chat_room_id: int, user=Depends(get_current_user())):
 
 # WebSocket 端點
 @router.websocket("/ws/chat/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: int):
-    await manager.connect(websocket, user_id)
+async def websocket_endpoint(websocket: WebSocket, user_id: int, token: str = Query(None)):
+    """
+    WebSocket 聊天端點
+    需要 JWT token 進行身份驗證
+    """
     try:
-        while True:
-            data = await websocket.receive_text()
-            try:
-                message_data = json.loads(data)
-                await WebSocketService.handle_message(user_id, message_data)
-            except json.JSONDecodeError:
-                # 處理非 JSON 訊息（如心跳包）
-                await websocket.send_text("pong")
-    except WebSocketDisconnect:
-        manager.disconnect(user_id)
+        # 驗證 JWT token
+        if not token:
+            await websocket.close(code=4001, reason="缺少 JWT token")
+            return
+        
+        # 解碼並驗證 token
+        from utils import decode_token
+        user_data = decode_token(token, 'access')
+        
+        if not user_data:
+            await websocket.close(code=4001, reason="JWT token 無效或過期")
+            return
+        
+        # 驗證用戶ID是否匹配
+        if user_data.get('user_id') != user_id:
+            await websocket.close(code=4003, reason="用戶ID不匹配")
+            return
+        
+        # 驗證成功，建立連接
+        await manager.connect(websocket, user_id, user_data)
+        
+        try:
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    message_data = json.loads(data)
+                    await WebSocketService.handle_message(user_id, message_data)
+                except json.JSONDecodeError:
+                    # 處理非 JSON 訊息（如心跳包）
+                    await websocket.send_text("pong")
+        except WebSocketDisconnect:
+            manager.disconnect(user_id)
+            
+    except Exception as e:
+        logger.error(f"WebSocket 連接錯誤: {e}")
+        await websocket.close(code=4000, reason="內部服務錯誤")

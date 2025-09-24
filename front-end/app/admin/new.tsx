@@ -60,11 +60,11 @@ export default function AddUserScreen() {
         router.replace('/admin/users');
       } else {
         const text = await res.text();  
-        console.error('❌ 後端錯誤：', text);
+        console.error('後端錯誤：', text);
         throw new Error(`HTTP ${res.status} - ${text}`);
       }
     } catch (err: any) {
-      console.error('❌ 發送錯誤：', err);
+      console.error('發送錯誤：', err);
       Alert.alert('錯誤', err.message);
     }
   };

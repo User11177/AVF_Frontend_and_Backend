@@ -1,15 +1,32 @@
-"*.apk" *.apk
-*.aab
-*.ipa
-android/app/build/
-ios/build/
+# 應用程式構建文件
 *.apk
 *.aab
 *.ipa
 android/app/build/
 ios/build/
-*.apk
-*.aab
-*.ipa
-android/app/build/
-ios/build/
+
+# 配置文件 - 防止密碼外洩
+config
+*.yml
+*.yaml
+config.*
+*.config
+
+# 環境變數文件
+.env
+.env.local
+.env.production
+.env.development
+
+# 日誌文件
+*.log
+logs/
+
+# 上傳文件
+uploads/
+
+# 其他敏感文件
+*.key
+*.pem
+*.p12
+*.jks

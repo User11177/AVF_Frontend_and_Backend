@@ -5,6 +5,58 @@ from utils import get_current_user
 
 router = APIRouter()
 
+# 取得病患自己的檢測記錄 - 必須放在 {user_id} 路由之前
+@router.get("/api/patient/my-records")
+def get_my_medical_records(user=Depends(get_current_user())):
+    """
+    取得當前病患的檢測記錄
+    只允許病患查看自己的記錄
+    """
+    user_id = user.get('user_id')
+    user_role = user.get('role')
+    
+    # 驗證病患權限
+    if user_role != 'patient':
+        raise HTTPException(status_code=403, detail='只有病患可以查看自己的檢測記錄')
+    
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    
+    # 取得檢測記錄
+    cursor.execute("""
+        SELECT m.id as measurement_id, m.position, m.mode, m.duration_sec, 
+               m.captured_at, m.created_at,
+               ar.id as analysis_id, ar.analysis, ar.result, ar.details, ar.created_at as analyzed_at
+        FROM measurements m
+        LEFT JOIN analysis_results ar ON m.id = ar.measurement_id
+        WHERE m.user_id = %s
+        ORDER BY m.created_at DESC
+    """, (user_id,))
+    
+    measurements = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return {
+        "success": True,
+        "measurements": measurements,
+        "count": len(measurements)
+    }
+
+# 依身分證查病患
+@router.get("/api/patient/search")
+def get_patient(id: str = Query(...), user=Depends(get_current_user())):
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM patients WHERE id_number = %s", (id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="找不到此身分證對應的病患")
+    return row
+
 # 查詢病患個資
 @router.get("/api/patient/{user_id}")
 def get_patient_info(user_id: int, user=Depends(get_current_user())):
@@ -49,16 +101,3 @@ def update_patient_info(user_id: int, payload: PatientUpdate, user=Depends(get_c
     cursor.close()
     conn.close()
     return {"message": "病患資料已更新"}
-
-# 依身分證查病患
-@router.get("/api/patient/search")
-def get_patient(id: str = Query(...), user=Depends(get_current_user())):
-    conn = get_db()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM patients WHERE id_number = %s", (id,))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="找不到此身分證對應的病患")
-    return row 

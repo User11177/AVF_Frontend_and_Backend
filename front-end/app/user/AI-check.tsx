@@ -5,11 +5,12 @@
 */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, ActivityIndicator, Linking, Platform, AppState, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { BleManager, Characteristic } from 'react-native-ble-plx';
+import base64 from 'react-native-base64';
 import { API_URL } from '../../utils/appgol_config';
 
 /** 量測模式（只錄音、只震動、或兩者皆錄） */
@@ -83,6 +84,22 @@ export default function AICheck() {
   const [permissionsChecked, setPermissionsChecked] = useState(false);
   /** both 模式下的目前階段：先 audio（全部位置）→ 再 vib（全部位置），用於控制錄製流程 */
   const [bothModePhase, setBothModePhase] = useState<'audio' | 'vib' | null>(null);
+  /** 權限狀態追蹤 */
+  const [permissionStatus, setPermissionStatus] = useState<{
+    audio: boolean,
+    bluetooth: boolean,
+    nearbyDevices: boolean,
+    wt901Connected: boolean
+  }>({audio: false, bluetooth: false, nearbyDevices: false, wt901Connected: false});
+  
+  /** 防止重複權限檢查的標記 */
+  const isCheckingPermissions = useRef(false);
+  
+  /** 防止重複 BLE 連接的標記 */
+  const isConnectingBle = useRef(false);
+  
+  /** 連接狀態管理 */
+  const connectionStateRef = useRef<'disconnected' | 'connecting' | 'connected' | 'scanning'>('disconnected');
 
   /** expo-av 的 Recording 參考，用於控制錄音功能 */
   const recRef = useRef<Audio.Recording | null>(null);
@@ -93,6 +110,11 @@ export default function AICheck() {
 
   /** 收集中的震動資料（字串陣列，最終 join 成 CSV），用於存儲錄製的震動數據 */
   const vibDataRef = useRef<string[]>([]);
+  
+  /** 已移除自動重連機制，改為純手動控制 */
+  
+  /** 設備檢查面板是否展開 */
+  const [isCheckPanelExpanded, setIsCheckPanelExpanded] = useState(false);
 
   /**
    * 初始化：讀 MRN、檢查權限（錄音/藍牙）
@@ -102,42 +124,218 @@ export default function AICheck() {
    */
   useEffect(() => {
     (async () => {
+      console.log('AI-check 頁面初始化開始');
+      
+      // 先清理所有 BLE 狀態
+      await cleanupBleState();
+      
       const m = await AsyncStorage.getItem('user_mrn');
       if (!m) Alert.alert('缺少病例號','請先於個人資料設定病例號(MRN)');
       setMrn(m || '');
       
       // 檢查權限（錄音 & 藍牙）
       await checkAllPermissions();
+      
+      // 不啟動自動重連，改為純手動控制
+      console.log('WT901 連接設置為手動模式');
     })();
+    
+    // 清理函數
+    return () => {
+      if (bleMonitorRef.current) {
+        bleMonitorRef.current.remove();
+        bleMonitorRef.current = null;
+      }
+      // 停止掃描
+      bleManagerRef.current.stopDeviceScan();
+      
+      // 斷開 WT901 連線
+      if (bleDeviceRef.current) {
+        bleDeviceRef.current.cancelConnection()
+          .then(() => console.log('WT901 連線已斷開'))
+          .catch((error: any) => console.log('斷開 WT901 連線失敗:', error));
+        bleDeviceRef.current = null;
+      }
+    };
   }, []);
 
   /**
-   * 同步檢查錄音與藍牙權限
-   * - 若未授權，提示引導使用者前往系統設定
-   * - 使用 Promise.all 同時檢查多個權限，確保所有必要權限都已授予
+   * 監聽應用程式狀態變化，當從背景返回時重新檢查權限
+   * - 處理用戶從設定頁面返回的情況
+   * - 確保權限狀態始終是最新的
+   */
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        // 應用程式回到前台時，延遲重新檢查權限，避免過於頻繁
+        setTimeout(() => {
+          checkAllPermissions();
+        }, 500);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => subscription?.remove();
+  }, []);
+
+  /**
+   * 清理 BLE 連接狀態（同步狀態管理）
+   * - 停止所有掃描
+   * - 移除監聽器
+   * - 斷開現有連接
+   * - 重置所有狀態引用
+   */
+  async function cleanupBleState() {
+    try {
+      console.log('開始清理 BLE 狀態...');
+      
+      // 停止設備掃描
+      try {
+        bleManagerRef.current.stopDeviceScan();
+      } catch (error) {
+        console.log('停止掃描失敗:', error);
+      }
+      
+      // 移除數據監聽器
+      if (bleMonitorRef.current) {
+        try {
+          bleMonitorRef.current.remove();
+        } catch (error) {
+          console.log('移除監聽器失敗:', error);
+        }
+        bleMonitorRef.current = null;
+      }
+      
+      // 斷開現有設備連接
+      if (bleDeviceRef.current) {
+        try {
+          const isConnected = await Promise.race([
+            bleDeviceRef.current.isConnected(),
+            new Promise<boolean>((_, reject) => 
+              setTimeout(() => reject(new Error('檢查超時')), 1000)
+            )
+          ]);
+          
+          if (isConnected) {
+            await bleDeviceRef.current.cancelConnection();
+            console.log('已斷開現有 WT901 連接');
+          }
+        } catch (error) {
+          console.log('斷開連接時發生錯誤:', error);
+        }
+        bleDeviceRef.current = null;
+      }
+      
+      // 重置所有狀態
+      connectionStateRef.current = 'disconnected';
+      setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+      
+      console.log('BLE 狀態清理完成');
+    } catch (error) {
+      console.log('清理 BLE 狀態失敗:', error);
+      // 即使清理失敗也要重置狀態
+      connectionStateRef.current = 'disconnected';
+      setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+    }
+  }
+
+  /**
+   * 同步檢查所有權限與 WT901 連接狀態
+   * - 檢查錄音權限
+   * - 檢查藍牙權限
+   * - 檢查附近裝置權限
+   * - 檢查 WT901 是否已連接
    */
   async function checkAllPermissions() {
+    // 防止重複檢查
+    if (isCheckingPermissions.current) {
+      console.log('權限檢查已進行中，跳過重複檢查');
+      return;
+    }
+    
+    isCheckingPermissions.current = true;
+    
     try {
-      const results = await Promise.all([
-        checkAudioPermission(),
-        checkBluetoothPermission(),
-      ]);
+      console.log('開始檢查所有權限...');
       
-      const allGranted = results.every(r => r);
-      if (!allGranted) {
+      // 1. 檢查錄音權限
+      const audioGranted = await checkAudioPermission();
+      console.log('錄音權限:', audioGranted ? '已授權' : '未授權');
+      
+      // 2. 檢查藍牙狀態
+      const bluetoothEnabled = await checkBluetoothStatus();
+      console.log('藍牙狀態:', bluetoothEnabled ? '已開啟' : '未開啟');
+      
+      // 3. 檢查附近裝置權限
+      const nearbyDevicesGranted = await checkNearbyDevicesPermission();
+      console.log('附近裝置權限:', nearbyDevicesGranted ? '已授權' : '未授權');
+      
+      // 4. 檢查 WT901 連接狀態（僅檢查，不自動連接）
+      const wt901Connected = await checkWT901Connection();
+      console.log('WT901 連接:', wt901Connected ? '已連接' : '未連接');
+      
+      // 更新權限狀態
+      setPermissionStatus({
+        audio: audioGranted,
+        bluetooth: bluetoothEnabled,
+        nearbyDevices: nearbyDevicesGranted,
+        wt901Connected: wt901Connected
+      });
+      
+      // 顯示檢查結果
+      const failedItems: string[] = [];
+      if (!audioGranted) failedItems.push('錄音權限');
+      if (!bluetoothEnabled) failedItems.push('藍牙');
+      if (!nearbyDevicesGranted) failedItems.push('附近裝置權限');
+      if (!wt901Connected) failedItems.push('WT901連接');
+      
+      if (failedItems.length > 0) {
+        const title = '設備檢查';
+        let message = '';
+        let actionText = '前往設定';
+        
+        if (failedItems.includes('錄音權限')) {
+          message += '• 需要開啟麥克風權限才能進行音訊錄製\n';
+        }
+        if (failedItems.includes('藍牙')) {
+          message += '• 需要開啟藍牙才能連接震動感測器\n';
+        }
+        if (failedItems.includes('附近裝置權限')) {
+          message += '• 需要附近裝置權限才能搜尋 WT901\n';
+        }
+        if (failedItems.includes('WT901連接')) {
+          message += '• WT901 震動感測器尚未連接\n';
+          actionText = '重新連接';
+        }
+        
         Alert.alert(
-          '權限不足',
-          '此功能需要錄音與藍牙權限，請前往設定開啟',
+          title,
+          message + '\n請檢查設備狀態或前往系統設定',
           [
             { text: '取消', style: 'cancel' },
-            { text: '重新檢查', onPress: checkAllPermissions },
+            { text: actionText, onPress: () => failedItems.includes('WT901連接') ? connectWT901().catch(() => {}) : openAppSettings() }
           ]
         );
+      } else {
+        console.log('所有權限和設備檢查完成，狀態正常');
       }
+      
       setPermissionsChecked(true);
     } catch (e) {
       console.warn('權限檢查失敗:', e);
+      Alert.alert('權限檢查失敗', '無法完成權限檢查，請稍後再試');
+      // 權限檢查失敗時，設置為不可用狀態
+      setPermissionStatus({
+        audio: false,
+        bluetooth: false,
+        nearbyDevices: false,
+        wt901Connected: false
+      });
       setPermissionsChecked(true);
+    } finally {
+      // 重置檢查標記
+      isCheckingPermissions.current = false;
     }
   }
 
@@ -147,7 +345,7 @@ export default function AICheck() {
    */
   async function checkAudioPermission(): Promise<boolean> {
     try {
-      const { status } = await Audio.requestPermissionsAsync();
+      const { status } = await Audio.getPermissionsAsync();
       return status === 'granted';
     } catch {
       return false;
@@ -155,64 +353,339 @@ export default function AICheck() {
   }
 
   /**
-   * 檢查藍牙是否可用（react-native-ble-plx）
-   * - 注意：某些平台無法直接檢查，這裡失敗時先回 true，讓實際連線時再處理
-   * - 確保藍牙功能可用，否則在連接時處理錯誤
+   * 檢查藍牙狀態
    */
-  async function checkBluetoothPermission(): Promise<boolean> {
+  async function checkBluetoothStatus(): Promise<boolean> {
     try {
       const manager = bleManagerRef.current;
       const state = await manager.state();
       return state === 'PoweredOn';
-    } catch {
-      return true;
+    } catch (error) {
+      console.log('檢查藍牙狀態失敗:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 檢查附近裝置權限
+   */
+  async function checkNearbyDevicesPermission(): Promise<boolean> {
+    try {
+      const manager = bleManagerRef.current;
+      // 嘗試檢查權限狀態
+      // 注意：react-native-ble-plx 沒有直接的權限檢查API
+      // 這裡我們通過檢查藍牙狀態來推斷權限
+      const state = await manager.state();
+      return state === 'PoweredOn' || state === 'PoweredOff'; // 如果能取得狀態，表示有權限
+    } catch (error) {
+      console.log('檢查附近裝置權限失敗:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 檢查 WT901 設備是否已連線（與狀態管理同步）
+   */
+  async function checkWT901Connection(): Promise<boolean> {
+    try {
+      // 先檢查狀態管理
+      if (connectionStateRef.current !== 'connected') {
+        console.log(`WT901 狀態為 ${connectionStateRef.current}，非連接狀態`);
+        setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+        return false;
+      }
+      
+      // 檢查設備引用
+      if (!bleDeviceRef.current) {
+        console.log('WT901 設備引用不存在');
+        connectionStateRef.current = 'disconnected';
+        setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+        return false;
+      }
+      
+      try {
+        // 快速檢查連接狀態
+        const isConnected = await Promise.race([
+          bleDeviceRef.current.isConnected(),
+          new Promise<boolean>((_, reject) => 
+            setTimeout(() => reject(new Error('連接檢查超時')), 2000)
+          )
+        ]);
+        
+        if (!isConnected) {
+          console.log('WT901 設備已斷線');
+          connectionStateRef.current = 'disconnected';
+          bleDeviceRef.current = null;
+          setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+          return false;
+        }
+        
+        // 連接正常
+        setPermissionStatus(prev => ({ ...prev, wt901Connected: true }));
+        return true;
+        
+      } catch (error) {
+        console.log('檢查 WT901 連線狀態失敗:', error);
+        connectionStateRef.current = 'disconnected';
+        bleDeviceRef.current = null;
+        setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+        return false;
+      }
+      
+    } catch (error) {
+      console.log('WT901 連接檢查失敗:', error);
+      connectionStateRef.current = 'disconnected';
+      setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+      return false;
+    }
+  }
+
+  // 已移除自動重連機制，改為純手動控制
+
+  /**
+   * 開啟系統設定頁面
+   * - iOS: 開啟應用程式的設定頁面
+   * - Android: 開啟應用程式資訊頁面
+   */
+  async function openAppSettings() {
+    try {
+      if (Platform.OS === 'ios') {
+        await Linking.openURL('app-settings:');
+      } else {
+        await Linking.openSettings();
+      }
+      
+      // 延遲一下再重新檢查權限，讓用戶有時間從設定頁面返回
+      setTimeout(() => {
+        checkAllPermissions();
+      }, 1000);
+      
+    } catch (error) {
+      console.warn('無法開啟設定頁面:', error);
     }
   }
 
   /**
    * 確保錄音可用：再次確認權限並設定 iOS 靜音錄製
-   * - 若未授權，顯示提示，確保用戶知曉需要授權
    */
   async function ensureAudio() {
-    const { status } = await Audio.requestPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('權限不足','請允許錄音權限'); return false; }
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    return true;
+    try {
+      const { status } = await Audio.getPermissionsAsync();
+      if (status !== 'granted') { 
+        // 權限被撤銷，更新狀態
+        setPermissionStatus(prev => ({ ...prev, audio: false }));
+        return false; 
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      return true;
+    } catch (error) {
+      console.log('錄音權限檢查失敗:', error);
+      setPermissionStatus(prev => ({ ...prev, audio: false }));
+      return false;
+    }
   }
 
   /**
-   * 掃描並連線 WT901（以名稱或 MAC 片段識別）
-   * - 掃描 10 秒 timeout，確保在合理時間內完成掃描
-   * - 成功後 discover 服務/特徵並保存裝置參考，準備進行數據監聽
+   * 掃描並連線 WT901（重新設計的穩定版本）
+   * - 嚴格的狀態控制，防止多重連接
+   * - 使用連接隊列避免競爭條件
+   * - 改進的錯誤處理和清理機制
    */
   async function connectWT901() {
+    console.log(`當前連接狀態: ${connectionStateRef.current}`);
+    
+    // 嚴格的狀態檢查：只允許在斷開狀態下開始連接
+    if (connectionStateRef.current !== 'disconnected') {
+      const message = `WT901 當前狀態為 ${connectionStateRef.current}，無法開始新的連接`;
+      console.log(message);
+      throw new Error(message);
+    }
+    
+    // 設置為連接中狀態
+    connectionStateRef.current = 'connecting';
+    console.log('WT901 開始連接流程');
+    
     try {
+      // 檢查是否已有有效連接（雙重檢查）
+      if (bleDeviceRef.current) {
+        try {
+          const isConnected = await Promise.race([
+            bleDeviceRef.current.isConnected(),
+            new Promise<boolean>((_, reject) => 
+              setTimeout(() => reject(new Error('連接檢查超時')), 2000)
+            )
+          ]);
+          
+          if (isConnected) {
+            console.log('WT901 已存在有效連接，無需重新連接');
+            connectionStateRef.current = 'connected';
+            setPermissionStatus(prev => ({ ...prev, wt901Connected: true }));
+            return bleDeviceRef.current;
+          }
+        } catch (error) {
+          console.log('檢查現有連接失敗，將清除引用:', error);
+        }
+        
+        // 清除無效引用
+        bleDeviceRef.current = null;
+      }
+      
+      // 強制清理所有 BLE 狀態
+      await cleanupBleState();
+      
+      // 等待 BLE 狀態完全穩定
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 開始掃描
+      connectionStateRef.current = 'scanning';
+      console.log('開始掃描 WT901 設備...');
       const manager = bleManagerRef.current;
+      
       return new Promise((resolve, reject) => {
+        let scanCompleted = false;
+        
         const timeout = setTimeout(() => {
-          manager.stopDeviceScan();
-          reject(new Error('掃描超時'));
-        }, 10000);
+          if (!scanCompleted) {
+            scanCompleted = true;
+            connectionStateRef.current = 'disconnected';
+            try {
+              manager.stopDeviceScan();
+            } catch (e) {
+              console.log('停止掃描失敗:', e);
+            }
+            reject(new Error('掃描超時，請確認 WT901 設備已開啟並在附近'));
+          }
+        }, 10000); // 增加到10秒，給設備更多時間響應
         
         manager.startDeviceScan(null, null, async (err, device) => {
-          if (err) { clearTimeout(timeout); manager.stopDeviceScan(); reject(err); return; }
-          if (device && (device.name === 'WTC2-B-B5' || device.id?.toUpperCase().includes('DA:DC:BC'))) {
+          // 防止重複處理
+          if (scanCompleted) return;
+          
+          if (err) { 
+            scanCompleted = true;
+            clearTimeout(timeout); 
+            connectionStateRef.current = 'disconnected';
             try {
-              clearTimeout(timeout);
               manager.stopDeviceScan();
-              const connected = await manager.connectToDevice(device.id, {autoConnect: true});
+            } catch (e) {
+              console.log('停止掃描失敗:', e);
+            }
+            console.log('掃描失敗:', err);
+            setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+            reject(err); 
+            return; 
+          }
+          
+          // 只在找到目標設備時記錄
+          if (device && 
+              (device.name === 'WTC2-B-B5' || 
+               device.id?.toUpperCase() === 'DA:DC:BC:7A:88:77' ||
+               device.id?.toUpperCase().includes('DA:DC:BC'))) {
+            
+            scanCompleted = true;
+            clearTimeout(timeout);
+            
+            try {
+              manager.stopDeviceScan();
+              console.log('找到 WT901 設備，正在連接...', device.name || device.id);
+              
+              // 設置為連接中
+              connectionStateRef.current = 'connecting';
+              
+              // 使用簡化的連接參數
+              const connected = await manager.connectToDevice(device.id, {
+                autoConnect: false,
+                requestMTU: 256  // 降低 MTU 提高相容性
+              });
+              
+              // 等待連接穩定
+              await new Promise(resolve => setTimeout(resolve, 1500));
+              
+              // 發現服務
               await connected.discoverAllServicesAndCharacteristics();
+              
+              // 發送初始化命令（簡化版）
+              try {
+                await connected.writeCharacteristicWithResponseForService(
+                  serviceUUID, 
+                  writeUUID, 
+                  base64.encode(String.fromCharCode(0xFF, 0xAA, 0x27))
+                );
+                console.log('WT901 初始化命令發送成功');
+              } catch (writeError) {
+                console.log('WT901 初始化命令發送失敗，但繼續連接:', writeError);
+              }
+              
+              // 最終連接確認
+              const finalCheck = await connected.isConnected();
+              if (!finalCheck) {
+                throw new Error('連接後立即斷開，設備不穩定');
+              }
+              
+              // 設置斷線監聽器（簡化版）
+              connected.onDisconnected((error, dev) => {
+                console.log("WT901 已斷開:", dev?.id);
+                if (error) console.log("斷線錯誤:", error);
+                
+                // 重置所有狀態
+                connectionStateRef.current = 'disconnected';
+                setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+                bleDeviceRef.current = null;
+                
+                // 清理監聽器
+                if (bleMonitorRef.current) {
+                  try {
+                    bleMonitorRef.current.remove();
+                  } catch (e) {
+                    console.log("移除監聽器失敗:", e);
+                  }
+                  bleMonitorRef.current = null;
+                }
+              });
+              
+              // 連接成功
+              connectionStateRef.current = 'connected';
               bleDeviceRef.current = connected;
+              setPermissionStatus(prev => ({ ...prev, wt901Connected: true }));
+              console.log('WT901 連接成功且穩定');
               resolve(connected);
-            } catch (e) { reject(e); }
+              
+            } catch (e) { 
+              console.log('WT901 連接失敗:', e);
+              connectionStateRef.current = 'disconnected';
+              setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+              reject(e); 
+            }
           }
         });
       });
-    } catch (e) { throw e; }
+      
+    } catch (e) { 
+      console.log('connectWT901 整體失敗:', e);
+      connectionStateRef.current = 'disconnected';
+      setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+      throw e; 
+    }
+  }
+
+  /**
+   * 手動斷開 WT901 連接
+   */
+  async function disconnectWT901() {
+    console.log('開始手動斷開 WT901 連接...');
+    
+    try {
+      // 強制清理所有 BLE 狀態
+      await cleanupBleState();
+      console.log('WT901 手動斷開完成');
+    } catch (error) {
+      console.log('手動斷開 WT901 失敗:', error);
+    }
   }
 
   /**
    * 開始監聽 WT901 通知並把加速度資料存到 vibDataRef (CSV)
+   * - 使用與範例相同的 base64 解碼方式
    * - 只寫入 accX/accY/accZ，用逗號分隔，確保數據格式一致
    * - 第一列為標題列，便於後續數據處理
    */
@@ -221,18 +694,26 @@ export default function AICheck() {
     const device = bleDeviceRef.current;
     if (!device) throw new Error('WT901 未連線');
     
+    console.log('開始監聽 WT901 數據...');
+    
     bleMonitorRef.current = device.monitorCharacteristicForService(
       serviceUUID, notifyUUID,
       (_e: Error | null, char: Characteristic | null) => {
         try {
           if (!char?.value) return;
-          // Base64 → bytes
-          const buffer = Uint8Array.from(atob(char.value), c => c.charCodeAt(0));
+          
+          // 使用與範例相同的 base64 解碼方式
+          const buffer = Uint8Array.from(base64.decode(char.value), c => c.charCodeAt(0));
           const data = parseWT901Data(buffer, device.id);
+          
           if (data) {
             vibDataRef.current.push(`${data.timestamp},${data.accX.toFixed(6)},${data.accY.toFixed(6)},${data.accZ.toFixed(6)}`);
+            // 可選：在開發階段顯示接收到的數據
+            // console.log('收到 WT901 數據:', data.accX.toFixed(3), data.accY.toFixed(3), data.accZ.toFixed(3));
           }
-        } catch {}
+        } catch (error) {
+          console.log('解析 WT901 數據失敗:', error);
+        }
       }
     );
   }
@@ -404,7 +885,11 @@ export default function AICheck() {
    */
   async function recordAudio(pos: Pos) {
     const ok = await ensureAudio();
-    if (!ok) throw new Error('音訊權限不足');
+    if (!ok) {
+      // 權限不足，更新狀態並拋出錯誤
+      setPermissionStatus(prev => ({ ...prev, audio: false }));
+      throw new Error('音訊權限不足');
+    }
     
     const audioRec = new Audio.Recording();
     await audioRec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
@@ -441,8 +926,34 @@ export default function AICheck() {
    * - 確保震動數據錄製完整，並將結果保存到指定位置
    */
   async function recordVibration(pos: Pos) {
-    if (!bleDeviceRef.current) await connectWT901();
-    await startVibRecording();
+    try {
+      // 檢查 WT901 是否已連線，若未連線則嘗試連接
+      if (!bleDeviceRef.current) {
+        await connectWT901();
+      } else {
+        // 檢查現有連線是否仍然有效
+        const isConnected = await bleDeviceRef.current.isConnected();
+        if (!isConnected) {
+          console.log('WT901 連線已斷開，嘗試重新連接');
+          bleDeviceRef.current = null;
+          await connectWT901();
+        }
+      }
+      await startVibRecording();
+    } catch (error: any) {
+      // 簡化的錯誤提示
+      const errorMessage = error.message || '未知錯誤';
+      Alert.alert(
+        '設備連接失敗',
+        `無法連接到震動感測器，請確認：\n• WT901 設備已開啟\n• 設備在藍牙範圍內\n• 藍牙權限已開啟`,
+        [
+          { text: '確定', style: 'cancel' }
+        ]
+      );
+      // 更新 WT901 狀態為不可用
+      setPermissionStatus(prev => ({ ...prev, wt901Connected: false }));
+      throw error; // 重新拋出錯誤讓上層處理
+    }
     
     // 倒數計時（每秒 -1），用於顯示錄製過程中的倒數
     const timer = setInterval(() => {
@@ -527,33 +1038,115 @@ export default function AICheck() {
    * - 確保所有位置的數據都已上傳並分析，便於用戶了解整體結果
    */
   async function uploadAll() {
-    if (!mrn) { Alert.alert('缺少病例號','請先於個人資料設定病例號(MRN)'); return; }
-    if (!mode) { Alert.alert('請先選擇模式'); return; }
+    if (!mrn) { 
+      Alert.alert('需要病例號', '請先到個人資料頁面設定您的病例號 (MRN)'); 
+      return; 
+    }
+    if (!mode) { 
+      Alert.alert('請選擇模式', '請先選擇錄製模式再進行上傳'); 
+      return; 
+    }
     const ready = list.filter(x => x.status === 'done');
-    if (ready.length === 0) { Alert.alert('尚無可上傳資料'); return; }
+    if (ready.length === 0) { 
+      Alert.alert('無錄製資料', '請先完成位置錄製再進行上傳分析'); 
+      return; 
+    }
+    
     try {
+      // 顯示上傳進度
+      Alert.alert('開始上傳', `正在上傳 ${ready.length} 個位置的錄製資料...`);
+      
       const ids: number[] = [];
-      for (const it of ready) ids.push(await uploadOne(it));
+      for (const it of ready) {
+        try {
+          ids.push(await uploadOne(it));
+        } catch (uploadError: any) {
+          throw new Error(`位置 ${it.pos} 上傳失敗：${uploadError.message || '網路錯誤'}`);
+        }
+      }
+      
+      // 進行分析
       let anyBad = false;
-      for (const mid of ids) { const r = await analyzeOne(mid); anyBad ||= (r?.result === 'bad'); }
-      Alert.alert('分析結果', anyBad ? 'bad' : 'good');
-    } catch (e:any) { Alert.alert('錯誤', String(e?.message || e)); }
+      for (const mid of ids) { 
+        try {
+          const r = await analyzeOne(mid); 
+          anyBad ||= (r?.result === 'bad'); 
+        } catch (analyzeError: any) {
+          throw new Error(`分析失敗：${analyzeError.message || '伺服器錯誤'}`);
+        }
+      }
+      
+      Alert.alert(
+        '分析完成', 
+        anyBad ? '檢測結果：需要進一步檢查' : '檢測結果：狀況良好',
+        [{ text: '確定' }]
+      );
+    } catch (e: any) { 
+      Alert.alert('上傳失敗', e?.message || '請檢查網路連接後重試'); 
+    }
   }
 
   /**
    * 模式選擇按鈕（三個：音訊/震動/音訊+震動）
    * - 已鎖定時只能點選目前模式，其他按鈕 disabled，確保用戶不會誤操作
+   * - 選擇震動相關模式時檢查權限
    */
   function ModeBtn({m}:{m:Mode}) {
     const active = mode===m;
     const disabled = isModeLocked && mode !== m;
+    
+    const handleModeSelect = () => {
+      // 檢查錄音權限（所有模式都需要）
+      if (!permissionStatus.audio) {
+        Alert.alert(
+          '需要麥克風權限',
+          '錄製功能需要使用麥克風，請前往系統設定開啟權限。',
+          [
+            { text: '取消', style: 'cancel' },
+            { text: '前往設定', onPress: () => openAppSettings() },
+          ]
+        );
+        return;
+      }
+      
+      // 如果選擇震動相關模式，檢查額外權限
+      if (m === 'vib' || m === 'both') {
+        const issues = [];
+        
+        if (!permissionStatus.bluetooth) {
+          issues.push('請開啟藍牙');
+        }
+        if (!permissionStatus.nearbyDevices) {
+          issues.push('需要附近裝置權限');
+        }
+        if (!permissionStatus.wt901Connected) {
+          issues.push('WT901 感測器未連接');
+        }
+        
+        if (issues.length > 0) {
+          const message = `震動錄製需要：\n\n${issues.map(item => `• ${item}`).join('\n')}\n\n請檢查上方設備狀態並完成設置。`;
+          Alert.alert(
+            '震動錄製設置',
+            message,
+            [
+              { text: '取消', style: 'cancel' },
+              { text: '重新檢查', onPress: () => checkAllPermissions() },
+            ]
+          );
+          return;
+        }
+      }
+      
+      setMode(m);
+    };
+    
     return (
       <TouchableOpacity 
         disabled={disabled}
-        style={[styles.modeBtn, active && styles.modeBtnActive, disabled && styles.disabled]} 
-        onPress={()=>setMode(m)}
+        style={[styles.modeBtn, active ? styles.modeBtnActive : null, disabled ? styles.disabled : null]} 
+        onPress={handleModeSelect}
       >
-        <Text style={[styles.modeText, active && styles.modeTextActive, disabled && {color:'#999'}]}>
+        <Text style={[styles.modeText, active ? styles.modeTextActive : null, disabled ? {color:'#999'} : null]}>
           {m==='audio'?'音訊': m==='vib'?'震動':'音訊+震動'}
         </Text>
       </TouchableOpacity>
@@ -569,14 +1162,14 @@ export default function AICheck() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>位置 {item.pos}</Text>
         <Text style={styles.cardDesc}>
-          {item.status==='idle' && '未錄製'}
-          {item.status==='recording' && '錄製中...'}
-          {item.status==='done' && '已完成'}
+          {item.status === 'idle' ? '未錄製' : 
+           item.status === 'recording' ? '錄製中...' : 
+           item.status === 'done' ? '已完成' : '未知狀態'}
         </Text>
         <View style={{flexDirection:'row', gap:12}}>
           <TouchableOpacity
             disabled={item.status==='recording' || !mode || !mrn || isRecording}
-            style={[styles.actionBtn, (item.status==='recording'||!mode||!mrn||isRecording) && styles.disabled]}
+            style={[styles.actionBtn, (item.status==='recording'||!mode||!mrn||isRecording) ? styles.disabled : null]}
             onPress={()=>recordOne(item.pos)}
           >
             <Text style={styles.actionText}>{item.status==='idle'?'開始':'重錄'}</Text>
@@ -604,32 +1197,186 @@ export default function AICheck() {
   /** 主畫面 UI */
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>AI 檢測（3 個固定位置，各 {RECORDING_DURATION} 秒）</Text>
-      <Text style={styles.tip}>MRN：{mrn || '(未設定)'}</Text>
-      
-      <Text style={styles.section}>
-        STEP 1：模式選擇 {isModeLocked && '(已鎖定)'}
-        {bothModePhase && ` - 當前階段：${bothModePhase === 'audio' ? '音訊錄製' : '震動錄製'}`}
-      </Text>
-      <View style={{flexDirection:'row', gap:8, marginBottom:8}}>
-        <ModeBtn m="audio" />
-        <ModeBtn m="vib" />
-        <ModeBtn m="both" />
-      </View>
-      {isModeLocked && (
-        <TouchableOpacity style={styles.resetBtn} onPress={resetMode}>
-          <Text style={styles.resetText}>重新選擇模式</Text>
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+      >
+        <Text style={styles.title}>AI 檢測（3 個固定位置，各 {RECORDING_DURATION} 秒）</Text>
+        <Text style={styles.tip}>MRN：{mrn || '(未設定)'}</Text>
+        
+        {/* 設備檢查面板 - 可折疊 */}
+        <View style={styles.checkPanel}>
+          {/* 面板標題列 - 始終顯示 */}
+          <TouchableOpacity 
+            style={styles.checkPanelHeader}
+            onPress={() => setIsCheckPanelExpanded(!isCheckPanelExpanded)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.checkPanelHeaderLeft}>
+              <Text style={styles.checkPanelTitle}>設備檢查</Text>
+              {/* 快速狀態摘要 */}
+              <View style={styles.quickStatusSummary}>
+                <View style={[styles.miniStatusDot, permissionStatus.audio ? styles.miniStatusSuccess : styles.miniStatusError]} />
+                <View style={[styles.miniStatusDot, permissionStatus.bluetooth && permissionStatus.nearbyDevices ? styles.miniStatusSuccess : styles.miniStatusError]} />
+                <View style={[styles.miniStatusDot, permissionStatus.wt901Connected ? styles.miniStatusSuccess : styles.miniStatusWarning]} />
+              </View>
+            </View>
+            <View style={styles.checkPanelHeaderRight}>
+              <TouchableOpacity 
+                style={styles.refreshButton} 
+                onPress={(e) => {
+                  e.stopPropagation();
+                  checkAllPermissions();
+                }}
+              >
+                <Text style={styles.refreshIcon}>🔄</Text>
+              </TouchableOpacity>
+              <Text style={[styles.expandIcon, isCheckPanelExpanded && styles.expandIconRotated]}>
+                ▼
+              </Text>
+            </View>
+          </TouchableOpacity>
+          
+          {/* 展開內容 */}
+          {isCheckPanelExpanded && (
+            <View style={styles.checkPanelContent}>
+              {/* 權限檢查項目 */}
+              <View style={styles.checkItems}>
+                {/* 麥克風權限 */}
+                <View style={styles.checkItem}>
+                  <View style={styles.checkItemLeft}>
+                    <View style={[styles.checkIcon, permissionStatus.audio ? styles.checkIconSuccess : styles.checkIconError]}>
+                      <Text style={styles.checkIconText}>
+                        {permissionStatus.audio ? '✓' : '✕'}
+                      </Text>
+                    </View>
+                    <View style={styles.checkItemInfo}>
+                      <Text style={styles.checkItemTitle}>麥克風權限</Text>
+                      <Text style={styles.checkItemDesc}>錄音檢測需要</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.checkItemStatus, permissionStatus.audio ? styles.statusSuccess : styles.statusError]}>
+                    {permissionStatus.audio ? '已授權' : '未授權'}
+                  </Text>
+                </View>
+                
+                {/* 藍牙權限 */}
+                <View style={styles.checkItem}>
+                  <View style={styles.checkItemLeft}>
+                    <View style={[styles.checkIcon, permissionStatus.bluetooth && permissionStatus.nearbyDevices ? styles.checkIconSuccess : styles.checkIconError]}>
+                      <Text style={styles.checkIconText}>
+                        {permissionStatus.bluetooth && permissionStatus.nearbyDevices ? '✓' : '✕'}
+                      </Text>
+                    </View>
+                    <View style={styles.checkItemInfo}>
+                      <Text style={styles.checkItemTitle}>藍牙權限</Text>
+                      <Text style={styles.checkItemDesc}>設備連接需要</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.checkItemStatus, permissionStatus.bluetooth && permissionStatus.nearbyDevices ? styles.statusSuccess : styles.statusError]}>
+                    {permissionStatus.bluetooth && permissionStatus.nearbyDevices ? '已開啟' : '未開啟'}
+                  </Text>
+                </View>
+                
+                {/* WT901 設備 */}
+                <View style={styles.checkItem}>
+                  <View style={styles.checkItemLeft}>
+                    <View style={[styles.checkIcon, permissionStatus.wt901Connected ? styles.checkIconSuccess : styles.checkIconWarning]}>
+                      <Text style={styles.checkIconText}>
+                        {permissionStatus.wt901Connected ? '✓' : '◯'}
+                      </Text>
+                    </View>
+                    <View style={styles.checkItemInfo}>
+                      <Text style={styles.checkItemTitle}>震動感測器</Text>
+                      <Text style={styles.checkItemDesc}>WTC2-B-B5</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.connectButton, permissionStatus.wt901Connected && styles.connectButtonConnected]}
+                    onPress={async () => {
+                      if (permissionStatus.wt901Connected) {
+                        // 已連接時，點擊斷開
+                        Alert.alert(
+                          '確認斷開',
+                          '是否要斷開 WT901 設備連接？',
+                          [
+                            { text: '取消', style: 'cancel' },
+                            { 
+                              text: '斷開', 
+                              style: 'destructive',
+                              onPress: async () => {
+                                try {
+                                  await disconnectWT901();
+                                  Alert.alert('斷開成功', 'WT901 設備已斷開連接');
+                                } catch (error: any) {
+                                  Alert.alert('斷開失敗', error.message || '斷開設備時發生錯誤');
+                                }
+                              }
+                            }
+                          ]
+                        );
+                        return;
+                      }
+                      
+                      // 未連接時，點擊連接
+                      try {
+                        Alert.alert('連接中', '正在嘗試連接 WT901 設備，請稍候...');
+                        await connectWT901();
+                        Alert.alert('連接成功', 'WT901 設備連接成功！');
+                      } catch (error: any) {
+                        Alert.alert(
+                          '連接失敗', 
+                          `無法連接 WT901 設備\n\n錯誤：${error.message || '未知錯誤'}\n\n請確認：\n• 設備已開啟\n• 設備在藍牙範圍內\n• 藍牙權限已開啟`,
+                          [
+                            { text: '確定', style: 'cancel' },
+                            { text: '重新檢查權限', onPress: () => checkAllPermissions() }
+                          ]
+                        );
+                      }
+                    }}
+                  >
+                    <Text style={[styles.connectButtonText, permissionStatus.wt901Connected && styles.connectButtonTextConnected]}>
+                      {permissionStatus.wt901Connected ? '斷開' : '連接'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              {/* 快捷操作 */}
+              <View style={styles.quickActionsRow}>
+                <TouchableOpacity style={styles.settingsButton} onPress={openAppSettings}>
+                  <Text style={styles.settingsButtonText}>系統設定</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+        
+        <Text style={styles.section}>
+          STEP 1：模式選擇 {isModeLocked ? '(已鎖定)' : ''}
+          {bothModePhase ? ` - 當前階段：${bothModePhase === 'audio' ? '音訊錄製' : '震動錄製'}` : ''}
+        </Text>
+        <View style={{flexDirection:'row', gap:8, marginBottom:8}}>
+          <ModeBtn m="audio" />
+          <ModeBtn m="vib" />
+          <ModeBtn m="both" />
+        </View>
+        {isModeLocked && (
+          <TouchableOpacity style={styles.resetBtn} onPress={resetMode}>
+            <Text style={styles.resetText}>重新選擇模式</Text>
+          </TouchableOpacity>
+        )}
+        
+        <Text style={styles.section}>STEP 2：逐位置錄製</Text>
+        {list.map(x => <PosCard key={x.pos} item={x} />)}
+        
+        <Text style={styles.section}>STEP 3：上傳與分析</Text>
+        <TouchableOpacity style={[styles.uploadBtn]} onPress={uploadAll}>
+          <Text style={styles.uploadText}>上傳並分析</Text>
         </TouchableOpacity>
-      )}
-      
-      <Text style={styles.section}>STEP 2：逐位置錄製</Text>
-      {list.map(x => <PosCard key={x.pos} item={x} />)}
-      
-      <Text style={styles.section}>STEP 3：上傳與分析</Text>
-      <TouchableOpacity style={[styles.uploadBtn]} onPress={uploadAll}>
-        <Text style={styles.uploadText}>上傳並分析</Text>
-      </TouchableOpacity>
-      <Text style={styles.small}>後端可用性檢測(假值) → 分析(假值) → 回傳 good/bad</Text>
+        <Text style={styles.small}>後端可用性檢測(假值) → 分析(假值) → 回傳 good/bad</Text>
+      </ScrollView>
       
       {/* 錄製時的半遮罩（顯示倒數與提示） */}
       <Modal visible={isRecording} transparent animationType="fade">
@@ -648,7 +1395,9 @@ export default function AICheck() {
 
 /** 風格樣式（保持不動，只加註解） */
 const styles = StyleSheet.create({
-  container: { flex:1, padding:16, backgroundColor:'#fff' },
+  container: { flex:1, backgroundColor:'#fff' },
+  scrollView: { flex:1 },
+  scrollContent: { padding:16, paddingBottom:40 },
   title: { fontSize:18, fontWeight:'bold', marginBottom:8 },
   tip: { color:'#666', marginBottom:12 },
   section: { marginTop:16, marginBottom:8, fontWeight:'bold' },
@@ -673,5 +1422,187 @@ const styles = StyleSheet.create({
   recordingModal: { backgroundColor:'#fff', padding:24, borderRadius:12, alignItems:'center' },
   recordingText: { fontSize:18, fontWeight:'bold', marginTop:12 },
   countdownText: { fontSize:32, fontWeight:'bold', color:'#007AFF', marginTop:8 },
-  recordingTip: { fontSize:14, color:'#666', marginTop:8 }
+  recordingTip: { fontSize:14, color:'#666', marginTop:8 },
+  // 設備檢查面板樣式
+  checkPanel: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E9ECEF'
+  },
+  checkPanelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4
+  },
+  checkPanelHeaderLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  checkPanelHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12
+  },
+  checkPanelTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1D1D1F',
+    marginRight: 12
+  },
+  checkPanelContent: {
+    marginTop: 16
+  },
+  // 快速狀態摘要
+  quickStatusSummary: {
+    flexDirection: 'row',
+    gap: 6
+  },
+  miniStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E5E5EA'
+  },
+  miniStatusSuccess: {
+    backgroundColor: '#28A745'
+  },
+  miniStatusError: {
+    backgroundColor: '#DC3545'
+  },
+  miniStatusWarning: {
+    backgroundColor: '#FFC107'
+  },
+  // 展開箭頭
+  expandIcon: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginLeft: 8,
+    transform: [{ rotate: '0deg' }]
+  },
+  expandIconRotated: {
+    transform: [{ rotate: '180deg' }]
+  },
+  refreshButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  refreshIcon: {
+    fontSize: 14,
+    color: '#FFFFFF'
+  },
+  checkItems: {
+    gap: 16
+  },
+  checkItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E9ECEF'
+  },
+  checkItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1
+  },
+  checkIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12
+  },
+  checkIconSuccess: {
+    backgroundColor: '#D4EDDA',
+    borderColor: '#28A745',
+    borderWidth: 1
+  },
+  checkIconError: {
+    backgroundColor: '#F8D7DA',
+    borderColor: '#DC3545',
+    borderWidth: 1
+  },
+  checkIconWarning: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFC107',
+    borderWidth: 1
+  },
+  checkIconText: {
+    fontSize: 16,
+    fontWeight: '700'
+  },
+  checkItemInfo: {
+    flex: 1
+  },
+  checkItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1D1D1F',
+    marginBottom: 2
+  },
+  checkItemDesc: {
+    fontSize: 14,
+    color: '#6C757D'
+  },
+  checkItemStatus: {
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  statusSuccess: {
+    color: '#28A745'
+  },
+  statusError: {
+    color: '#DC3545'
+  },
+  connectButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#007AFF',
+    minWidth: 70
+  },
+  connectButtonConnected: {
+    backgroundColor: '#DC3545' // 改為紅色，表示斷開功能
+  },
+  connectButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center'
+  },
+  connectButtonTextConnected: {
+    color: '#FFFFFF'
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 16
+  },
+  settingsButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: '#6C757D',
+    minWidth: 120
+  },
+  settingsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center'
+  }
 });

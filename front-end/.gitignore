@@ -36,3 +36,10 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# 移除 ios/ 目錄（建議使用 Managed 工作流）
+ios/
+
+# 額外的 Expo 相關忽略項目
+.expo-shared/
+*.log

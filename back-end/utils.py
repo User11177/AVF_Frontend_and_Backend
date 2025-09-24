@@ -188,7 +188,7 @@ def decode_token(token, type='access'):
     except Exception:
         return None
 
-# 權限驗證 decorator 工廠函式
+# 權限驗證 decorator 函式
 def get_current_user(role=None):
     """
     建立一個 FastAPI 依賴 (dependency)，用來驗證目前請求的使用者。
@@ -219,4 +219,33 @@ def get_current_user(role=None):
         return data
 
     return dependency
+
+# ============================================================================
+# 管理員權限驗證函數
+# ============================================================================
+
+async def verify_admin_role(request: Request):
+    """
+    專門用於管理員權限驗證的依賴函數
+    驗證用戶是否為管理員角色
+    """
+    # 從 HTTP Header 取出 JWT token
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    
+    # 驗證並解碼 token
+    data = decode_token(token, 'access')
+    
+    # 驗證失敗或不是管理員角色
+    if not data or data.get('role') != 'admin':
+        raise HTTPException(
+            status_code=403, 
+            detail='僅限管理員訪問此功能'
+        )
+    
+    return data
+
+# 便捷的管理員角色依賴
+def require_admin():
+    """返回管理員角色驗證依賴"""
+    return Depends(verify_admin_role)
 

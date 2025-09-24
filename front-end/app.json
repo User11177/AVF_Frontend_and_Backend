@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "avfcare",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -16,8 +16,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.user1117.rnProject",
-      "usesCleartextTraffic": true
+      "package": "com.user1117.rnProject"
     },
     "web": {
       "bundler": "metro",

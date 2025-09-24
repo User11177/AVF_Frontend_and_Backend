@@ -13,12 +13,19 @@ class ConnectionManager:
         self.active_connections: Dict[int, WebSocket] = {}
         # 聊天室ID -> 用戶ID列表的映射
         self.room_users: Dict[int, List[int]] = {}
+        # 用戶ID -> 用戶資料的映射（包含角色等資訊）
+        self.user_data: Dict[int, dict] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: int):
+    async def connect(self, websocket: WebSocket, user_id: int, user_data: dict = None):
         """建立 WebSocket 連接"""
         await websocket.accept()
         self.active_connections[user_id] = websocket
-        logger.info(f"用戶 {user_id} 已連接 WebSocket")
+        
+        # 儲存用戶資料（包含角色等資訊）
+        if user_data:
+            self.user_data[user_id] = user_data
+        
+        logger.info(f"用戶 {user_id} (角色: {user_data.get('role', 'unknown') if user_data else 'unknown'}) 已連接 WebSocket")
 
     def disconnect(self, user_id: int):
         """斷開 WebSocket 連接"""
